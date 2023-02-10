@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[kube(
 group = "openebs.io",
-version = "v1alpha1",
+version = "v2alpha2",
 kind = "DiskPool",
 plural = "diskpools",
 // The name of the struct that gets created that represents a resource
