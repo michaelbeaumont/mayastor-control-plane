@@ -19,13 +19,14 @@ use crate::{
 use agents::errors::{SvcError, SvcError::CordonedNode};
 use stor_port::types::v0::{
     store::{
-        nexus::{NexusOperation, NexusSpec, NexusStatusInfo, ReplicaUri},
+        nexus::{NexusOperation, NexusSpec, NexusStatusInfo, RebuildInfo, ReplicaUri},
         nexus_child::NexusChild,
     },
     transport::{
         child::Child,
         nexus::{CreateNexus, DestroyNexus, Nexus, ShareNexus, UnshareNexus},
         AddNexusChild, FaultNexusChild, NodeStatus, RemoveNexusChild, ShutdownNexus,
+        ChildUri,
     },
 };
 
@@ -474,5 +475,19 @@ impl OperationGuardArc<NexusSpec> {
                 Err(error)
             }
         }
+    }
+
+    pub async fn set_rebuild_state(
+        &mut self,
+        registry: &Registry,
+        uri: ChildUri,
+        stage: Option<RebuildInfo>,
+    ) -> Result<(), SvcError> {
+        let status = registry.nexus(self.uuid()).await?;
+        let spec_clone = self
+            .start_update(registry, &status, NexusOperation::RebuildState(uri, stage))
+            .await?;
+        self.complete_update(registry, Ok(()), spec_clone).await?;
+        Ok(())
     }
 }

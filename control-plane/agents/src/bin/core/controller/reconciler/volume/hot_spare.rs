@@ -104,10 +104,39 @@ async fn generic_nexus_reconciler(
     context: &PollContext,
 ) -> PollResult {
     let mut results = vec![];
+    results.push(handle_faulted_child(nexus, context).await);
+    results.push(wait_for_child(nexus, context).await);
+    results.push(initialize_partial_rebuild(nexus, context).await);
     results.push(faulted_children_remover(nexus, context).await);
     results.push(unknown_children_remover(nexus, context).await);
     results.push(missing_children_remover(nexus, context).await);
     squash_results(results)
+}
+
+/// This would check if nexus has any faulted child,
+/// If yes and if there isn't any ongoing rebuild operation on child yet,
+/// will start rebuild operation for a child by updating respective step in NexusSpec.
+async fn handle_faulted_child(
+    nexus: &mut OperationGuardArc<NexusSpec>,
+    context: &PollContext,
+) -> PollResult {
+    nexus::handle_faulted_child(nexus, context).await
+}
+
+async fn wait_for_child(
+    nexus: &mut OperationGuardArc<NexusSpec>,
+    context: &PollContext,
+) -> PollResult {
+    nexus::wait_for_child(nexus, context).await
+}
+
+/// Start partial rebuild on a Faulted child if RebuildStage::PartialRebuildInit is set for the
+/// child.
+async fn initialize_partial_rebuild(
+    nexus: &mut OperationGuardArc<NexusSpec>,
+    context: &PollContext,
+) -> PollResult {
+    nexus::initialize_partial_rebuild(nexus, context).await
 }
 
 /// Given a degraded volume

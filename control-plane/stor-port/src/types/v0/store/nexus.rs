@@ -14,7 +14,7 @@ use crate::types::v0::{
 };
 use pstor::ApiVersion;
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
+use std::{collections::HashMap, convert::TryFrom, time::Duration};
 
 /// Nexus information.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -109,7 +109,30 @@ pub struct NexusSpec {
     #[serde(default)]
     /// Hosts allowed to access the nexus.
     pub allowed_hosts: Vec<HostNqn>,
+    #[serde(default)]
+    pub rebuild_state: HashMap<ChildUri, RebuildInfo>,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct RebuildInfo {
+    pub wait_time: Option<Duration>,
+    pub stage: RebuildStage,
+}
+
+impl RebuildInfo {
+    pub fn new(wait_time: Option<Duration>, stage: RebuildStage) -> Self {
+        Self { wait_time, stage }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub enum RebuildStage {
+    TimedWait,
+    PartialRebuildInit,
+    PartialRebuild,
+    FullRebuildInit,
+}
+
 impl NexusSpec {
     /// Check if the spec contains the provided replica by it's `ReplicaId`.
     pub fn contains_replica(&self, uuid: &ReplicaId) -> bool {
@@ -250,6 +273,13 @@ impl SpecTransaction<NexusOperation> for NexusSpec {
                 NexusOperation::RemoveChild(uri) => {
                     self.children.retain(|c| c.uri() != uri.uri());
                 }
+                NexusOperation::RebuildState(child_uri, stage) => {
+                    if let Some(stage) = stage {
+                        self.rebuild_state.insert(child_uri, stage);
+                    } else {
+                        self.rebuild_state.remove(&child_uri);
+                    }
+                }
             }
         }
         self.clear_op();
@@ -283,6 +313,7 @@ pub enum NexusOperation {
     Unshare,
     AddChild(NexusChild),
     RemoveChild(NexusChild),
+    RebuildState(ChildUri, Option<RebuildInfo>),
 }
 
 /// Key used by the store to uniquely identify a NexusSpec structure.
@@ -335,6 +366,7 @@ impl From<&CreateNexus> for NexusSpec {
             nvmf_config: request.config.clone(),
             status_info: NexusStatusInfo::new(false),
             allowed_hosts: vec![],
+            rebuild_state: HashMap::new(),
         }
     }
 }

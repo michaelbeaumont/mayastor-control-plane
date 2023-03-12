@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "v1/misc/common.proto";
 import "google/protobuf/wrappers.proto";
+import "google/protobuf/duration.proto";
 
 package v1.nexus;
 
@@ -108,6 +109,19 @@ message NexusSpec {
   optional NexusNvmfConfig nvmf_config = 11;
   // Hosts allowed to access nexus
   repeated string allowed_hosts = 12;
+  map<string, RebuildInfo> rebuild_state = 13;
+}
+
+message RebuildInfo {
+  optional google.protobuf.Duration wait_period = 1;
+  RebuildStage stage = 2;
+}
+
+enum RebuildStage {
+    TimedWait = 0;
+    PartialRebuildInit = 1;
+    PartialRebuild = 2;
+    FullRebuildInit = 3;
 }
 
 // Nexus children (replica or "raw" URI)

@@ -79,6 +79,7 @@ impl SpecOperationsHelper for NexusSpec {
             }
             NexusOperation::RemoveChild(_) => Ok(()),
             NexusOperation::Shutdown => Ok(()),
+            NexusOperation::RebuildState(_, _) => Ok(()),
             _ => unreachable!(),
         }?;
         self.start_op(op);

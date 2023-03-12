@@ -371,6 +371,7 @@ impl TryFrom<nexus::NexusSpec> for NexusSpec {
                 .into_iter()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?,
+            rebuild_state: Default::default(),
         })
     }
 }
@@ -406,6 +407,7 @@ impl From<NexusSpec> for nexus::NexusSpec {
                 Ok(host_nqn) => host_nqn,
                 Err(_) => vec![],
             },
+            rebuild_state: Default::default(),
         }
     }
 }
