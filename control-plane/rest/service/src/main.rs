@@ -11,7 +11,7 @@ use actix_web::{
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use rustls_pemfile::{certs, rsa_private_keys};
 use std::{fs::File, io::BufReader};
-use utils::DEFAULT_GRPC_CLIENT_ADDR;
+use utils::{nats_connection::NatsConnectionSpec, DEFAULT_GRPC_CLIENT_ADDR};
 
 #[derive(Debug, Parser)]
 #[structopt(name = utils::package_description!(), version = utils::version_info_str!())]
@@ -205,10 +205,17 @@ async fn main() -> anyhow::Result<()> {
     utils::print_package_info!();
     let cli_args = CliArgs::args();
     println!("Using options: {:?}", &cli_args);
+
+    let nats = NatsConnectionSpec::from_url("nats://my-nats:4222")
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
     utils::tracing_telemetry::init_tracing(
         "rest-server",
         cli_args.tracing_tags.clone(),
         cli_args.jaeger.clone(),
+        nats,
     );
 
     let app = move || {

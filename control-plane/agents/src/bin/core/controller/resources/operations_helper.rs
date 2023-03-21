@@ -29,6 +29,7 @@ use parking_lot::RwLock;
 use serde::de::DeserializeOwned;
 use snafu::{ResultExt, Snafu};
 use std::{fmt::Debug, ops::Deref, sync::Arc};
+use tracing::Level;
 
 #[derive(Debug, Snafu)]
 #[snafu(context(suffix(false)))]
@@ -142,6 +143,8 @@ pub(crate) trait GuardedOperationsHelper:
         match result {
             Ok(val) => {
                 tracing::info!(?val, "complete_create");
+
+                tracing::event!(target: "nats", Level::INFO, event = "VolumeCreated", target = "volume1");
 
                 let mut spec_clone = self.lock().clone();
                 spec_clone.commit_op();

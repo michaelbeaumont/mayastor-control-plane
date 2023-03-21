@@ -11,6 +11,7 @@ use plugin::{
     rest_wrapper::RestClient,
 };
 use std::env;
+use utils::nats_connection::NatsConnectionSpec;
 
 #[derive(clap::Parser, Debug)]
 #[clap(name = utils::package_description!(), version = utils::version_info_str!())]
@@ -43,7 +44,12 @@ impl CliArgs {
 
 #[tokio::main]
 async fn main() {
-    plugin::init_tracing(CliArgs::args().jaeger.as_ref());
+    let nats = NatsConnectionSpec::from_url("nats://my-nats:4222")
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    plugin::init_tracing(CliArgs::args().jaeger.as_ref(), nats);
 
     execute(CliArgs::args()).await;
 

@@ -2,7 +2,10 @@
 pub use opentelemetry::{global, trace, Context, KeyValue};
 
 use opentelemetry::sdk::{propagation::TraceContextPropagator, Resource};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Registry};
+use tracing::Level;
+use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt, Layer, Registry};
+
+use crate::{nats::TypedNats, publisher::EventHandle};
 
 /// Parse KeyValues from structopt's cmdline arguments
 pub fn parse_key_value(source: &str) -> Result<KeyValue, String> {
@@ -58,8 +61,13 @@ pub fn rust_log_add_quiet_defaults(
 
 /// Initialise tracing and optionally opentelemetry.
 /// Tracing will have a stdout subscriber with pretty formatting.
-pub fn init_tracing(service_name: &str, tracing_tags: Vec<KeyValue>, jaeger: Option<String>) {
-    init_tracing_ext(service_name, tracing_tags, jaeger, FmtLayer::Stdout);
+pub fn init_tracing(
+    service_name: &str,
+    tracing_tags: Vec<KeyValue>,
+    jaeger: Option<String>,
+    nats: TypedNats,
+) {
+    init_tracing_ext(service_name, tracing_tags, jaeger, FmtLayer::Stdout, nats);
 }
 
 /// Fmt Layer for console output.
@@ -79,6 +87,7 @@ pub fn init_tracing_ext<T: std::net::ToSocketAddrs>(
     mut tracing_tags: Vec<KeyValue>,
     jaeger: Option<T>,
     fmt_layer: FmtLayer,
+    nats: TypedNats,
 ) {
     let filter = rust_log_add_quiet_defaults(
         tracing_subscriber::EnvFilter::try_from_default_env()
@@ -99,6 +108,11 @@ pub fn init_tracing_ext<T: std::net::ToSocketAddrs>(
     };
 
     let subscriber = Registry::default().with(filter).with(stdout).with(stderr);
+
+    let mut nats_tracing_handle = EventHandle::init().unwrap();
+    let filter = filter::Targets::new().with_target("nats", Level::INFO);
+    nats_tracing_handle.attach_nats(nats).unwrap();
+    //subscriber.with(nats_tracing_handle.layer.with_filter(filter));
 
     match jaeger {
         Some(jaeger) => {
@@ -128,9 +142,14 @@ pub fn init_tracing_ext<T: std::net::ToSocketAddrs>(
                 .install_batch(opentelemetry::runtime::TokioCurrentThread)
                 .expect("Should be able to initialise the exporter");
             let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
-            subscriber.with(telemetry).init();
+            subscriber
+                .with(nats_tracing_handle.layer.with_filter(filter))
+                .with(telemetry)
+                .init();
         }
-        None => subscriber.init(),
+        None => subscriber
+            .with(nats_tracing_handle.layer.with_filter(filter))
+            .init(),
     };
 }
 

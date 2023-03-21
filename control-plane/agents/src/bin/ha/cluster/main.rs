@@ -5,8 +5,9 @@ use once_cell::sync::OnceCell;
 use std::net::SocketAddr;
 use tracing::info;
 use utils::{
-    package_description, tracing_telemetry::KeyValue, version_info_str,
-    DEFAULT_CLUSTER_AGENT_SERVER_ADDR, DEFAULT_GRPC_CLIENT_ADDR,
+    nats::TypedNats, nats_connection::NatsConnectionSpec, package_description,
+    tracing_telemetry::KeyValue, version_info_str, DEFAULT_CLUSTER_AGENT_SERVER_ADDR,
+    DEFAULT_GRPC_CLIENT_ADDR,
 };
 mod etcd;
 mod nodes;
@@ -58,11 +59,12 @@ pub(crate) fn core_grpc<'a>() -> &'a CoreClient {
         .expect("gRPC Core Client should have been initialised")
 }
 
-fn initialize_tracing(args: &Cli) {
+fn initialize_tracing(args: &Cli, nats: TypedNats) {
     utils::tracing_telemetry::init_tracing(
         "agent-ha-cluster",
         args.tracing_tags.clone(),
         args.jaeger.clone(),
+        nats,
     )
 }
 
@@ -72,7 +74,12 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::args();
 
-    initialize_tracing(&cli);
+    let nats = NatsConnectionSpec::from_url("nats://my-nats:4222")
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    initialize_tracing(&cli, nats);
 
     // Initialise the core client to be used in rest
     CORE_CLIENT

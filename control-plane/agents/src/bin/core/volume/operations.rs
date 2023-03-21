@@ -41,7 +41,8 @@ use stor_port::{
     },
     HostAccessControl,
 };
-use tracing::info;
+//use tracing::info;
+use tracing::{info, Level};
 
 #[async_trait::async_trait]
 impl ResourceLifecycle for OperationGuardArc<VolumeSpec> {
@@ -86,6 +87,7 @@ impl ResourceLifecycle for OperationGuardArc<VolumeSpec> {
             match OperationGuardArc::<ReplicaSpec>::create(registry, &replica).await {
                 Ok(replica) => {
                     replicas.push(replica);
+                    tracing::event!(target: "nats", Level::INFO, event = "VolumeCreated", target = "volume1");
                 }
                 Err(error) => {
                     volume_clone.error(&format!(
