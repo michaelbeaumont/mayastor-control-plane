@@ -173,7 +173,7 @@ async fn check_and_drain_node(context: &PollContext, node_spec: &NodeSpec) -> Po
                     tracing::info!(
                         volume.uuid = vol_id.as_str(),
                         nexus.uuid = nexus_id.as_str(),
-                        node.id = node_spec.id().as_str(),
+                        node.id = node_id.as_str(),
                         "Moving volume"
                     );
                     if let Err(e) =
@@ -184,7 +184,7 @@ async fn check_and_drain_node(context: &PollContext, node_spec: &NodeSpec) -> Po
                             error=%e,
                             volume.uuid = vol_id.as_str(),
                             nexus.uuid = nexus_id.as_str(),
-                            node.id = node_spec.id().as_str(),
+                            node.id = node_id.as_str(),
                             "Failed to republish volume"
                         );
                         move_failures = true;
@@ -193,7 +193,7 @@ async fn check_and_drain_node(context: &PollContext, node_spec: &NodeSpec) -> Po
                     tracing::info!(
                         volume.uuid = vol_id.as_str(),
                         nexus.uuid = nexus_id.as_str(),
-                        node.id = node_spec.id().as_str(),
+                        node.id = node_id.as_str(),
                         "Moved volume"
                     );
                     new_draining_volumes.insert(vol_id.clone());
@@ -207,7 +207,7 @@ async fn check_and_drain_node(context: &PollContext, node_spec: &NodeSpec) -> Po
     }
     if let Err(error) = context
         .specs()
-        .add_node_draining_volumes(context.registry(), node_spec.id(), new_draining_volumes)
+        .add_node_draining_volumes(context.registry(), node_id, new_draining_volumes)
         .await
     {
         tracing::error!(

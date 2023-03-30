@@ -1,3 +1,4 @@
+mod operations;
 mod registry;
 /// Node Service
 pub(super) mod service;

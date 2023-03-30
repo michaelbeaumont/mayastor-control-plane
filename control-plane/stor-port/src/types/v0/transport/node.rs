@@ -9,7 +9,7 @@ use strum_macros::{Display, EnumString};
 /// Registration
 ///
 /// Register message payload
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Register {
     /// Node Id of the io-engine instance.

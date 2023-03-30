@@ -1,7 +1,12 @@
 use super::*;
 use crate::controller::{
-    reconciler::PollTriggerEvent, registry::Registry,
-    resources::operations_helper::ResourceSpecsLocked, wrapper::NodeWrapper,
+    reconciler::PollTriggerEvent,
+    registry::Registry,
+    resources::{
+        operations::{ResourceCordon, ResourceDrain},
+        operations_helper::ResourceSpecsLocked,
+    },
+    wrapper::NodeWrapper,
 };
 use agents::errors::SvcError;
 use stor_port::types::v0::transport::{
@@ -319,32 +324,32 @@ impl Service {
         client.list_blockdevices(request).await
     }
 
+    // here get the guarded node
     async fn cordon(&self, id: NodeId, label: String) -> Result<Node, SvcError> {
-        let spec = self
-            .registry
-            .specs()
-            .cordon_node(&self.registry, &id, label)
-            .await?;
+        let mut guarded_node = self.specs().guarded_node(&id).await?;
+
+        // call onto operations here
+        let spec = guarded_node.cordon(&self.registry, label.clone()).await?;
         let state = self.registry.node_state(&id).await.ok();
-        Ok(Node::new(id, Some(spec), state))
+        Ok(Node::new(id, Some(spec.clone()), state))
     }
 
+    // here get the guarded node
     async fn uncordon(&self, id: NodeId, label: String) -> Result<Node, SvcError> {
-        let spec = self
-            .registry
-            .specs()
-            .uncordon_node(&self.registry, &id, label)
-            .await?;
+        let mut guarded_node = self.specs().guarded_node(&id).await?;
+
+        // call onto operations here
+        let spec = guarded_node.uncordon(&self.registry, label.clone()).await?;
         let state = self.registry.node_state(&id).await.ok();
         Ok(Node::new(id, Some(spec), state))
     }
 
+    // here get the guarded node
     async fn drain(&self, id: NodeId, label: String) -> Result<Node, SvcError> {
-        let spec = self
-            .registry
-            .specs()
-            .drain_node(&self.registry, &id, label)
-            .await?;
+        let mut guarded_node = self.specs().guarded_node(&id).await?;
+
+        // call onto operations here
+        let spec = guarded_node.drain(&self.registry, label.clone()).await?;
         let state = self.registry.node_state(&id).await.ok();
         Ok(Node::new(id, Some(spec), state))
     }

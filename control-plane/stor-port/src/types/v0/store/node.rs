@@ -2,12 +2,17 @@
 use crate::{
     types::v0::{
         openapi::models,
-        store::definitions::{ObjectKey, StorableObject, StorableObjectType},
-        transport::{self, HostNqn, NodeId, VolumeId},
+        store::{
+            definitions::{ObjectKey, StorableObject, StorableObjectType},
+            AsOperationSequencer, OperationSequence, SpecTransaction,
+        },
+        transport::{self, HostNqn, NodeId, Register, VolumeId},
     },
     IntoOption,
 };
 use pstor::ApiVersion;
+//use crate::types::v0::store::SpecTransaction;
+//use crate::types::v0::transport::Register;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -161,6 +166,11 @@ pub struct NodeSpec {
     draining_volumes: HashSet<VolumeId>,
     #[serde(skip)] // Do not store.
     draining_timestamp: Option<SystemTime>,
+    /// The operation sequence resource is in.
+    #[serde(skip)]
+    sequencer: OperationSequence,
+    /// Record of the operation in progress.
+    pub operation: Option<NodeOperationState>,
 }
 
 impl NodeSpec {
@@ -173,13 +183,15 @@ impl NodeSpec {
         node_nqn: Option<HostNqn>,
     ) -> Self {
         Self {
-            id,
+            id: id.clone(),
             endpoint,
             labels,
             cordon_drain_state,
             node_nqn,
             draining_volumes: HashSet::new(),
             draining_timestamp: None,
+            sequencer: OperationSequence::new(id),
+            operation: None,
         }
     }
     /// Node Nvme HOSTNQN.
@@ -414,6 +426,16 @@ impl From<NodeSpec> for models::NodeSpec {
     }
 }
 
+impl AsOperationSequencer for NodeSpec {
+    fn as_ref(&self) -> &OperationSequence {
+        &self.sequencer
+    }
+
+    fn as_mut(&mut self) -> &mut OperationSequence {
+        &mut self.sequencer
+    }
+}
+
 impl From<CordonDrainState> for models::CordonDrainState {
     fn from(node_ds: CordonDrainState) -> Self {
         match node_ds {
@@ -471,5 +493,71 @@ impl StorableObject for NodeSpec {
 
     fn key(&self) -> Self::Key {
         NodeSpecKey(self.id.clone())
+    }
+}
+
+impl PartialEq<Register> for NodeSpec {
+    fn eq(&self, other: &Register) -> bool {
+        other.id == self.id
+            && other.grpc_endpoint == self.endpoint
+            && other.node_nqn == self.node_nqn
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum NodeOperation {
+    Create,
+    Destroy,
+    Cordon(String),
+    Uncordon(String),
+    Drain(String),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct NodeOperationState {
+    /// Record of the operation
+    pub operation: NodeOperation,
+    /// Result of the operation
+    pub result: Option<bool>,
+}
+
+impl SpecTransaction<NodeOperation> for NodeSpec {
+    fn pending_op(&self) -> bool {
+        self.operation.is_some()
+    }
+
+    fn commit_op(&mut self) {
+        if let Some(op) = self.operation.clone() {
+            match op.operation {
+                NodeOperation::Cordon(label) => {
+                    self.cordon(label);
+                }
+                NodeOperation::Drain(label) => {
+                    self.set_drain(label);
+                }
+                NodeOperation::Uncordon(label) => {
+                    self.uncordon(label);
+                }
+                _ => (),
+            }
+        }
+        self.clear_op();
+    }
+
+    fn clear_op(&mut self) {
+        self.operation = None;
+    }
+
+    fn start_op(&mut self, operation: NodeOperation) {
+        self.operation = Some(NodeOperationState {
+            operation,
+            result: None,
+        })
+    }
+
+    fn set_op_result(&mut self, result: bool) {
+        if let Some(op) = &mut self.operation {
+            op.result = Some(result);
+        }
     }
 }
