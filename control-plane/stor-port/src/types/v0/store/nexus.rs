@@ -110,16 +110,21 @@ pub struct NexusSpec {
     /// Hosts allowed to access the nexus.
     pub allowed_hosts: Vec<HostNqn>,
     #[serde(default)]
+    /// Map defining Child and its Rebuild specific information.
     pub rebuild_state: HashMap<ChildUri, RebuildInfo>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+/// Rebuild specific information for a child.
 pub struct RebuildInfo {
+    /// Reconciler needs to wait for specified duration before starting Full Rebuild.
     pub wait_time: Option<Duration>,
+    /// Current Rebuild stage of the child.
     pub stage: RebuildStage,
 }
 
 impl RebuildInfo {
+    /// Constructor to create RebuildInfo structure.
     pub fn new(wait_time: Option<Duration>, stage: RebuildStage) -> Self {
         Self { wait_time, stage }
     }
@@ -127,9 +132,14 @@ impl RebuildInfo {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub enum RebuildStage {
+    /// Reconciler will wait for a time specified by the policy.
     TimedWait,
+    /// Reconciler will make child online which will start Partial rebuild of the child.
     PartialRebuildInit,
+    /// Reconciler has already made child online.
     PartialRebuild,
+    /// Reconciler will delete child from children list. This will trigger Full rebuild using new
+    /// child.
     FullRebuildInit,
 }
 
