@@ -207,10 +207,9 @@ pub(super) async fn initialize_partial_rebuild(
     let nexus_state = context.registry().nexus(&nexus_uuid).await?;
     let nexus_spec = nexus.lock().clone();
     let rebuild_state = nexus_spec.rebuild_state.clone();
-    let nexus_name = nexus_spec.name.clone();
     for (uri, state) in rebuild_state.iter() {
         if state.stage == RebuildStage::PartialRebuildInit {
-            info!("Making {:?} online of {:?} nexus", uri, nexus_name);
+            info!("Making {:?} online of {:?} nexus", uri, nexus_uuid);
             let node = context.registry().node_wrapper(&nexus_state.node).await?;
             let online_context = &NexusChildActionContext::new(&nexus_state.node, &nexus_uuid, uri);
             // TODO: improve error handling as online_child is done when replica node comes back.
