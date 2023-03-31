@@ -3,7 +3,7 @@ mod garbage_collector;
 
 use crate::{
     controller::{
-        io_engine::{NexusApi, NexusChildActionApi, NexusChildApi},
+        io_engine::{NexusApi, NexusChildActionApi},
         policies::rebuild_policies::RuleSet,
         reconciler::{ReCreate, Reconciler},
         resources::{
@@ -32,8 +32,8 @@ use stor_port::{
             nexus_child::NexusChild,
         },
         transport::{
-            Child, ChildStateReason, CreateNexus, FaultNexusChild, NexusChildActionContext,
-            NexusShareProtocol, NexusStatus, NodeId, NodeStatus, ShareNexus, UnshareNexus,
+            Child, ChildStateReason, CreateNexus, NexusChildActionContext, NexusShareProtocol,
+            NexusStatus, NodeId, NodeStatus, ShareNexus, UnshareNexus,
         },
     },
 };
@@ -289,18 +289,11 @@ pub(super) async fn faulted_children_remover(
             let nexus_spec_clone = nexus.lock().clone();
             for (child, state) in nexus_spec_clone.rebuild_state.iter() {
                 if state.stage == RebuildStage::FullRebuildInit {
-                    nexus_spec_clone.warn_span(|| {
-                        tracing::warn!("Attempting to remove faulted child '{}'", child)
-                    });
-                    if let Err(error) = context
-                        .specs()
-                        .remove_nexus_child_by_uri(
-                            context.registry(),
-                            nexus,
-                            &nexus_state,
-                            child,
-                            true,
-                        )
+                    nexus_spec_clone.warn_span(
+                        || tracing::warn!(%child, "Attempting to remove faulted child '{}'", child),
+                    );
+                    if let Err(error) = nexus
+                        .remove_child_by_uri(context.registry(), &nexus_state, child, true)
                         .await
                     {
                         nexus_spec_clone.error_span(|| {

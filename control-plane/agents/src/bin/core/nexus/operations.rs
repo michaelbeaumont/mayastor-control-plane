@@ -25,8 +25,7 @@ use stor_port::types::v0::{
     transport::{
         child::Child,
         nexus::{CreateNexus, DestroyNexus, Nexus, ShareNexus, UnshareNexus},
-        AddNexusChild, FaultNexusChild, NodeStatus, RemoveNexusChild, ShutdownNexus,
-        ChildUri,
+        AddNexusChild, ChildUri, FaultNexusChild, NodeStatus, RemoveNexusChild, ShutdownNexus,
     },
 };
 
