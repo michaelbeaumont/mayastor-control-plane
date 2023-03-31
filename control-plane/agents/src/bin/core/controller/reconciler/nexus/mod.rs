@@ -32,8 +32,8 @@ use stor_port::{
             nexus_child::NexusChild,
         },
         transport::{
-            Child, CreateNexus, FaultNexusChild, NexusChildActionContext, NexusShareProtocol,
-            NexusStatus, NodeId, NodeStatus, ShareNexus, UnshareNexus,
+            Child, ChildStateReason, CreateNexus, FaultNexusChild, NexusChildActionContext,
+            NexusShareProtocol, NexusStatus, NodeId, NodeStatus, ShareNexus, UnshareNexus,
         },
     },
 };
@@ -135,7 +135,7 @@ async fn nexus_reconciler(
 }
 
 /// Checks if nexus is Degraded and any child is Faulted. If yes, Depending on rebuild policy for
-/// child sets the rebuild stage in hashmap to drive the rebuild.
+/// child sets the rebuild stage in hashmap to drive the rebuild. We exclude NoSpace Degrade.
 #[tracing::instrument(skip(nexus, context), level = "trace", fields(nexus.uuid = %nexus.uuid(), request.reconcile = true))]
 pub(super) async fn handle_faulted_child(
     nexus: &mut OperationGuardArc<NexusSpec>,
@@ -147,7 +147,9 @@ pub(super) async fn handle_faulted_child(
     if nexus_state.status == NexusStatus::Degraded && child_count > 1 {
         let nexus_spec_clone = nexus.lock().clone();
         for child in nexus_state.children.iter().filter(|c| c.state.faulted()) {
-            if !nexus_spec_clone.rebuild_state.contains_key(&child.uri) {
+            if !nexus_spec_clone.rebuild_state.contains_key(&child.uri)
+                && child.state_reason.clone() != ChildStateReason::NoSpace
+            {
                 let wait_time = RuleSet::faulted_child_wait(&nexus_state);
                 if wait_time.is_zero() {
                     info!("Start full rebuild");
