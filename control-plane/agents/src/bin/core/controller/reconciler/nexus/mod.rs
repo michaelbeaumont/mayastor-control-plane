@@ -33,7 +33,7 @@ use stor_port::{
         },
         transport::{
             Child, ChildStateReason, CreateNexus, NexusChildActionContext, NexusShareProtocol,
-            NexusStatus, NodeId, NodeStatus, ShareNexus, UnshareNexus,
+            NexusStatus, NodeId, NodeStatus, PoolStatus, Replica, ShareNexus, UnshareNexus,
         },
     },
 };
@@ -197,6 +197,28 @@ async fn get_child_node(
     })
 }
 
+/// Gets replica for a child.
+async fn get_child_replica(
+    nexus: NexusSpec,
+    child: &Child,
+    context: &PollContext,
+) -> Result<Replica, SvcError> {
+    for nexus_child in nexus.children.iter() {
+        if let Some(replica) = nexus_child.as_replica() {
+            if replica.uri() == &child.uri {
+                let replica = context.registry().get_replica(replica.uuid()).await?;
+                return Ok(replica);
+            } else {
+                continue;
+            }
+        }
+    }
+    Err(SvcError::NotFound {
+        kind: ResourceKind::Node,
+        id: "Child replica not found".to_string(),
+    })
+}
+
 /// Iterates child rebuild stage and makes child online if RebuildStage is PartialRebuildInit. Marks
 /// stage as PartialRebuild.
 pub(super) async fn initialize_partial_rebuild(
@@ -245,6 +267,7 @@ pub(super) async fn wait_for_child(
             let nexus_uuid = nexus.uuid();
             let nexus_state = context.registry().nexus(nexus_uuid).await?;
             for ch in nexus_state.children.iter() {
+                info!("child faulted at {:?}", ch.faulted_at);
                 if &ch.uri == uri {
                     let child_node = get_child_node(nexus_spec.clone(), ch, context).await?;
                     let node = context.registry().node_wrapper(&child_node).await?;
@@ -255,13 +278,28 @@ pub(super) async fn wait_for_child(
                         }
                         NodeStatus::Online => {
                             info!("Child node came back {:?}", child_node);
-                            nexus
-                                .set_rebuild_state(
-                                    context.registry(),
-                                    ch.uri.clone(),
-                                    Some(RebuildInfo::new(None, RebuildStage::PartialRebuildInit)),
-                                )
-                                .await?;
+                            let child_replica =
+                                get_child_replica(nexus_spec.clone(), ch, context).await?;
+                            info!("child replica object is : {:?}", child_replica);
+                            let rep_pool = child_replica.pool_id;
+                            let pool = context.registry().get_pool(&rep_pool).await?;
+                            if let Some(state) = pool.state() {
+                                if state.status == PoolStatus::Online {
+                                    info!("Child pool is imported and its online");
+                                    nexus
+                                        .set_rebuild_state(
+                                            context.registry(),
+                                            ch.uri.clone(),
+                                            Some(RebuildInfo::new(
+                                                None,
+                                                RebuildStage::PartialRebuildInit,
+                                            )),
+                                        )
+                                        .await?;
+                                }
+                            } else {
+                                info!("Child pool is not imported yet");
+                            }
                         }
                     };
                 }
