@@ -268,50 +268,62 @@ pub(super) async fn wait_for_child(
                     if let Some(fault_time) = ch.faulted_at {
                         let elapsed = fault_time.elapsed();
                         info!("time elapsed is {:?}", elapsed);
-                        if elapsed.unwrap() >= state.wait_time.unwrap() {
-                            info!("Wait time elapses, Start Full rebuild");
-                            nexus
-                                .set_rebuild_state(
-                                    context.registry(),
-                                    ch.uri.clone(),
-                                    Some(RebuildInfo::new(None, RebuildStage::FullRebuildInit)),
-                                )
-                                .await?;
-                        } else {
-                            let child_node =
-                                get_child_node(nexus_spec.clone(), ch, context).await?;
-                            let node = context.registry().node_wrapper(&child_node).await?;
-                            let node_status = node.read().await.status();
-                            match node_status {
-                                NodeStatus::Unknown | NodeStatus::Offline => {
-                                    info!("Replica node is still not online");
-                                }
-                                NodeStatus::Online => {
-                                    info!("Child node came back {:?}", child_node);
-                                    let child_replica =
-                                        get_child_replica(nexus_spec.clone(), ch, context).await?;
-                                    info!("child replica object is : {:?}", child_replica);
-                                    let rep_pool = child_replica.pool_id;
-                                    let pool = context.registry().get_pool(&rep_pool).await?;
-                                    if let Some(state) = pool.state() {
-                                        if state.status == PoolStatus::Online {
-                                            info!("Child pool is imported and its online");
-                                            nexus
-                                                .set_rebuild_state(
-                                                    context.registry(),
-                                                    ch.uri.clone(),
-                                                    Some(RebuildInfo::new(
-                                                        None,
-                                                        RebuildStage::PartialRebuildInit,
-                                                    )),
-                                                )
-                                                .await?;
+                        if let Ok(elapsed) = elapsed {
+                            if let Some(wait_time) = state.wait_time {
+                                if elapsed >= wait_time {
+                                    info!(
+                                        "Wait time elapses, Start Full rebuild for child {:?}",
+                                        uri
+                                    );
+                                    nexus
+                                        .set_rebuild_state(
+                                            context.registry(),
+                                            ch.uri.clone(),
+                                            Some(RebuildInfo::new(
+                                                None,
+                                                RebuildStage::FullRebuildInit,
+                                            )),
+                                        )
+                                        .await?;
+                                } else {
+                                    let child_node =
+                                        get_child_node(nexus_spec.clone(), ch, context).await?;
+                                    let node = context.registry().node_wrapper(&child_node).await?;
+                                    let node_status = node.read().await.status();
+                                    match node_status {
+                                        NodeStatus::Unknown | NodeStatus::Offline => {
+                                            info!("Replica node is still not online");
                                         }
-                                    } else {
-                                        info!("Child pool is not imported yet");
-                                    }
+                                        NodeStatus::Online => {
+                                            info!("Child node came back {:?}", child_node);
+                                            let child_replica =
+                                                get_child_replica(nexus_spec.clone(), ch, context)
+                                                    .await?;
+                                            info!("child replica object is : {:?}", child_replica);
+                                            let rep_pool = child_replica.pool_id;
+                                            let pool =
+                                                context.registry().get_pool(&rep_pool).await?;
+                                            if let Some(state) = pool.state() {
+                                                if state.status == PoolStatus::Online {
+                                                    info!("Child pool is imported and its online");
+                                                    nexus
+                                                        .set_rebuild_state(
+                                                            context.registry(),
+                                                            ch.uri.clone(),
+                                                            Some(RebuildInfo::new(
+                                                                None,
+                                                                RebuildStage::PartialRebuildInit,
+                                                            )),
+                                                        )
+                                                        .await?;
+                                                }
+                                            } else {
+                                                info!("Child pool is not imported yet");
+                                            }
+                                        }
+                                    };
                                 }
-                            };
+                            }
                         }
                     }
                 }
