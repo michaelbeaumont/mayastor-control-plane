@@ -252,14 +252,10 @@ pub(super) async fn initialize_partial_rebuild(
 /// Iterates over child rebuild stage. If stage is TimedWait and wait duration isn't elapsed,
 /// checks if child node came back. If yes, Marks RebuildStage as PartialRebuildInit. If wait_time
 /// is elapsed then marks stage as FullRebuildInit.
-//TODO: Add time elapsed check to determine end of wait duration.
 pub(super) async fn wait_for_child(
     nexus: &mut OperationGuardArc<NexusSpec>,
     context: &PollContext,
 ) -> PollResult {
-    // let timestamp = prost_types::Timestamp::default();
-    // let system_time = std::time::SystemTime::try_from(timestamp).unwrap();
-    // let expires_at = system_time + std::time::Duration::from_secs(1);
     let nexus_spec = nexus.lock().clone();
     let rebuild_state = nexus_spec.rebuild_state.clone();
     for (uri, state) in rebuild_state.iter() {
@@ -267,41 +263,57 @@ pub(super) async fn wait_for_child(
             let nexus_uuid = nexus.uuid();
             let nexus_state = context.registry().nexus(nexus_uuid).await?;
             for ch in nexus_state.children.iter() {
-                info!("child faulted at {:?}", ch.faulted_at);
                 if &ch.uri == uri {
-                    let child_node = get_child_node(nexus_spec.clone(), ch, context).await?;
-                    let node = context.registry().node_wrapper(&child_node).await?;
-                    let node_status = node.read().await.status();
-                    match node_status {
-                        NodeStatus::Unknown | NodeStatus::Offline => {
-                            info!("Replica node is still not online");
-                        }
-                        NodeStatus::Online => {
-                            info!("Child node came back {:?}", child_node);
-                            let child_replica =
-                                get_child_replica(nexus_spec.clone(), ch, context).await?;
-                            info!("child replica object is : {:?}", child_replica);
-                            let rep_pool = child_replica.pool_id;
-                            let pool = context.registry().get_pool(&rep_pool).await?;
-                            if let Some(state) = pool.state() {
-                                if state.status == PoolStatus::Online {
-                                    info!("Child pool is imported and its online");
-                                    nexus
-                                        .set_rebuild_state(
-                                            context.registry(),
-                                            ch.uri.clone(),
-                                            Some(RebuildInfo::new(
-                                                None,
-                                                RebuildStage::PartialRebuildInit,
-                                            )),
-                                        )
-                                        .await?;
+                    info!("child with uri {:?} faulted at {:?}", uri, ch.faulted_at);
+                    if let Some(fault_time) = ch.faulted_at {
+                        let elapsed = fault_time.elapsed();
+                        info!("time elapsed is {:?}", elapsed);
+                        if elapsed.unwrap() >= state.wait_time.unwrap() {
+                            info!("Wait time elapses, Start Full rebuild");
+                            nexus
+                                .set_rebuild_state(
+                                    context.registry(),
+                                    ch.uri.clone(),
+                                    Some(RebuildInfo::new(None, RebuildStage::FullRebuildInit)),
+                                )
+                                .await?;
+                        } else {
+                            let child_node =
+                                get_child_node(nexus_spec.clone(), ch, context).await?;
+                            let node = context.registry().node_wrapper(&child_node).await?;
+                            let node_status = node.read().await.status();
+                            match node_status {
+                                NodeStatus::Unknown | NodeStatus::Offline => {
+                                    info!("Replica node is still not online");
                                 }
-                            } else {
-                                info!("Child pool is not imported yet");
-                            }
+                                NodeStatus::Online => {
+                                    info!("Child node came back {:?}", child_node);
+                                    let child_replica =
+                                        get_child_replica(nexus_spec.clone(), ch, context).await?;
+                                    info!("child replica object is : {:?}", child_replica);
+                                    let rep_pool = child_replica.pool_id;
+                                    let pool = context.registry().get_pool(&rep_pool).await?;
+                                    if let Some(state) = pool.state() {
+                                        if state.status == PoolStatus::Online {
+                                            info!("Child pool is imported and its online");
+                                            nexus
+                                                .set_rebuild_state(
+                                                    context.registry(),
+                                                    ch.uri.clone(),
+                                                    Some(RebuildInfo::new(
+                                                        None,
+                                                        RebuildStage::PartialRebuildInit,
+                                                    )),
+                                                )
+                                                .await?;
+                                        }
+                                    } else {
+                                        info!("Child pool is not imported yet");
+                                    }
+                                }
+                            };
                         }
-                    };
+                    }
                 }
             }
         }
@@ -319,8 +331,6 @@ pub(super) async fn faulted_children_remover(
     let nexus_uuid = nexus.uuid();
     let nexus_state = context.registry().nexus(nexus_uuid).await?;
     let child_count = nexus_state.children.len();
-
-    // Remove faulted children only from a degraded nexus with other healthy children left
     if nexus_state.status == NexusStatus::Degraded && child_count > 1 {
         let span = tracing::info_span!("faulted_children_remover", nexus.uuid = %nexus_uuid, request.reconcile = true);
         async {
