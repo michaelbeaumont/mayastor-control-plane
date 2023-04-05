@@ -228,7 +228,7 @@ pub(super) async fn initialize_partial_rebuild(
     let nexus_uuid = nexus.uuid().clone();
     let nexus_state = context.registry().nexus(&nexus_uuid).await?;
     let nexus_spec = nexus.lock().clone();
-    let rebuild_state = nexus_spec.rebuild_state.clone();
+    let rebuild_state = nexus_spec.rebuild_state;
     for (uri, state) in rebuild_state.iter() {
         if state.stage == RebuildStage::PartialRebuildInit {
             info!("Making {:?} online of {:?} nexus", uri, nexus_uuid);
