@@ -36,7 +36,7 @@ use stor_port::{
             nexus_child::NexusChild,
         },
         transport::{
-            Child, ChildStateReason, ChildUri, CreateNexus, NexusChildActionContext,
+            Child, ChildState, ChildStateReason, ChildUri, CreateNexus, NexusChildActionContext,
             NexusShareProtocol, NexusStatus, NodeStatus, Replica, ShareNexus, UnshareNexus,
         },
     },
@@ -124,6 +124,7 @@ async fn nexus_reconciler(
             handle_faulted_child(nexus, context).await,
             wait_for_child(nexus, context).await,
             initialize_partial_rebuild(nexus, context).await,
+            monitor_partial_rebuild_progress(nexus, context).await,
             faulted_children_remover(nexus, context).await,
             unknown_children_remover(nexus, context).await,
             missing_children_remover(nexus, context).await,
@@ -289,16 +290,71 @@ pub(super) async fn initialize_partial_rebuild(
             let node = context.registry().node_wrapper(&nexus_state.node).await?;
             let online_context =
                 &NexusChildActionContext::new(&nexus_state.node, nexus.uuid(), uri);
-            // TODO: improve error handling as online_child is done when replica node comes back.
-            // Nexus can mark replica Faulted again
-            let _result = node.online_child(online_context).await;
-            nexus
-                .set_rebuild_state(
-                    context.registry(),
-                    uri.clone(),
-                    Some(RebuildInfo::new(None, RebuildStage::PartialRebuild)),
-                )
-                .await?;
+            // Marks child for Full rebuild if online_child fails.
+            // TODO: Check if we can handle things differently for different SvcError.
+            if node.online_child(online_context).await.is_err() {
+                nexus
+                    .set_rebuild_state(
+                        context.registry(),
+                        uri.clone(),
+                        Some(RebuildInfo::new(None, RebuildStage::FullRebuildInit)),
+                    )
+                    .await?;
+            } else {
+                nexus
+                    .set_rebuild_state(
+                        context.registry(),
+                        uri.clone(),
+                        Some(RebuildInfo::new(None, RebuildStage::PartialRebuild)),
+                    )
+                    .await?;
+            }
+        }
+    }
+    Ok(PollerState::Idle)
+}
+
+/// Iterates over Rebuild stages. Monitors child state if stage is PartialRebuild. If child faults
+/// in between suggesting rebuild failure, We will mark child for Full Rebuild.
+/// TODO: Check if can retry online child few more times before Full Rebuild.
+pub(super) async fn monitor_partial_rebuild_progress(
+    nexus: &mut OperationGuardArc<NexusSpec>,
+    context: &PollContext,
+) -> PollResult {
+    let rebuild_state = nexus.as_ref().rebuild_state.clone();
+    for (uri, state) in rebuild_state.iter() {
+        if state.stage == RebuildStage::PartialRebuild {
+            let nexus_uuid = nexus.uuid();
+            let nexus_state = context.registry().nexus(nexus_uuid).await?;
+            for ch in nexus_state.children.iter() {
+                if &ch.uri == uri {
+                    match (ch.state.clone(), ch.state_reason.clone()) {
+                        (ChildState::Online, _) => {
+                            info!(
+                                "Partial rebuild completed for child: {:?}, removing rebuild info",
+                                uri
+                            );
+                            let _ = nexus
+                                .set_rebuild_state(context.registry(), uri.clone(), None)
+                                .await;
+                        }
+                        (ChildState::Degraded, ChildStateReason::OutOfSync) => {
+                            info!("Partial rebuild in progress for child :{:?}", uri);
+                            break;
+                        }
+                        (_, _) => {
+                            info!("Encountered failure during Partial rebuild, Child: {:?} Faulted again. Initiating Full rebuild for the child", uri);
+                            nexus
+                                .set_rebuild_state(
+                                    context.registry(),
+                                    uri.clone(),
+                                    Some(RebuildInfo::new(None, RebuildStage::FullRebuildInit)),
+                                )
+                                .await?;
+                        }
+                    }
+                }
+            }
         }
     }
     Ok(PollerState::Idle)

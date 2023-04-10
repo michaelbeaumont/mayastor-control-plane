@@ -107,6 +107,7 @@ async fn generic_nexus_reconciler(
     results.push(handle_faulted_child(nexus, context).await);
     results.push(wait_for_child(nexus, context).await);
     results.push(initialize_partial_rebuild(nexus, context).await);
+    results.push(monitor_partial_rebuild_progress(nexus, context).await);
     results.push(faulted_children_remover(nexus, context).await);
     results.push(unknown_children_remover(nexus, context).await);
     results.push(missing_children_remover(nexus, context).await);
@@ -137,6 +138,14 @@ async fn initialize_partial_rebuild(
     context: &PollContext,
 ) -> PollResult {
     nexus::initialize_partial_rebuild(nexus, context).await
+}
+
+/// Monitors partial rebuild progress for child.
+async fn monitor_partial_rebuild_progress(
+    nexus: &mut OperationGuardArc<NexusSpec>,
+    context: &PollContext,
+) -> PollResult {
+    nexus::monitor_partial_rebuild_progress(nexus, context).await
 }
 
 /// Given a degraded volume
