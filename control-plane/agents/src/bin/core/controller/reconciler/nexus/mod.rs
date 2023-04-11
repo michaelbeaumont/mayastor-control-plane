@@ -316,7 +316,6 @@ pub(super) async fn initialize_partial_rebuild(
 
 /// Iterates over Rebuild stages. Monitors child state if stage is PartialRebuild. If child faults
 /// in between suggesting rebuild failure, We will mark child for Full Rebuild.
-/// TODO: Check if can retry online child few more times before Full Rebuild.
 pub(super) async fn monitor_partial_rebuild_progress(
     nexus: &mut OperationGuardArc<NexusSpec>,
     context: &PollContext,
@@ -338,7 +337,10 @@ pub(super) async fn monitor_partial_rebuild_progress(
                                 .set_rebuild_state(context.registry(), uri.clone(), None)
                                 .await;
                         }
-                        (ChildState::Degraded, ChildStateReason::OutOfSync) => {
+                        (
+                            ChildState::Degraded | ChildState::Unknown,
+                            ChildStateReason::OutOfSync,
+                        ) => {
                             info!("Partial rebuild in progress for child :{:?}", uri);
                             break;
                         }
