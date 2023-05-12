@@ -158,6 +158,12 @@ impl apis::actix_server::Volumes for RestApi {
         Err(ReplyError::unimplemented("Snapshot creation is not implemented".to_string()).into())
     }
 
+    async fn delete_volume_snapshot(
+        Path((_volume_id, _snapshot_id)): Path<(Uuid, Uuid)>,
+    ) -> Result<(), RestError<RestJsonError>> {
+        Err(ReplyError::unimplemented("Snapshot deletion is not implemented".to_string()).into())
+    }
+
     async fn put_volume_target(
         Path(volume_id): Path<Uuid>,
         Body(publish_volume_body): Body<models::PublishVolumeBody>,

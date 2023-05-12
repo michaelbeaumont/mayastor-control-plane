@@ -1604,6 +1604,31 @@ paths:
           $ref: '#/components/responses/ServerError'
       security:
         - JWT: [ ]
+  '/volumes/{volume_id}/snapshots/{snapshot_id}':
+    delete:
+      tags:
+        - Volumes
+      operationId: delete_volume_snapshot
+      parameters:
+        - in: path
+          name: volume_id
+          required: true
+          schema:
+            $ref: '#/components/schemas/VolumeId'
+        - in: path
+          name: snapshot_id
+          required: true
+          schema:
+            $ref: '#/components/schemas/SnapshotId'
+      responses:
+        '204':
+          description: OK
+        '4XX':
+          $ref: '#/components/responses/ClientError'
+        '5XX':
+          $ref: '#/components/responses/ServerError'
+      security:
+        - JWT: [ ]
   '/watches/volumes/{volume_id}':
     get:
       tags:
