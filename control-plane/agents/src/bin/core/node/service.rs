@@ -3,14 +3,16 @@ use crate::controller::{
     reconciler::PollTriggerEvent,
     registry::Registry,
     resources::{
-        operations::{ResourceCordon, ResourceDrain},
+        operations::{ResourceCordon, ResourceDrain, ResourceLifecycle},
         operations_helper::ResourceSpecsLocked,
+        OperationGuardArc,
     },
     wrapper::NodeWrapper,
 };
 use agents::errors::SvcError;
-use stor_port::types::v0::transport::{
-    Deregister, Filter, Node, NodeId, NodeState, NodeStatus, Register,
+use stor_port::types::v0::{
+    store::node::NodeSpec,
+    transport::{Deregister, Filter, Node, NodeId, NodeState, NodeStatus, Register},
 };
 
 use crate::controller::wrapper::InternalOps;
@@ -182,6 +184,10 @@ impl Service {
     /// Register a new node through the register information
     #[tracing::instrument(level = "trace", skip(self), fields(node.id = %registration.id))]
     pub(super) async fn register(&self, registration: &Register) {
+        // create the guarded node here
+        let _guarded_node =
+            OperationGuardArc::<NodeSpec>::create(&self.registry, registration).await;
+
         self.registry.register_node_spec(registration).await;
         self.register_state(registration, false).await;
     }

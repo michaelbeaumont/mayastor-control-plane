@@ -4,7 +4,7 @@ use crate::{
         openapi::models,
         store::{
             definitions::{ObjectKey, StorableObject, StorableObjectType},
-            AsOperationSequencer, OperationSequence, SpecTransaction,
+            AsOperationSequencer, OperationSequence, SpecStatus, SpecTransaction,
         },
         transport::{self, HostNqn, NodeId, Register, VolumeId},
     },
@@ -146,6 +146,8 @@ pub struct NodeState {
     pub node: transport::NodeState,
 }
 
+pub type NodeSpecStatus = SpecStatus<()>;
+
 /// Node spec data, including the cordon/drain state.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct NodeSpec {
@@ -171,6 +173,9 @@ pub struct NodeSpec {
     sequencer: OperationSequence,
     /// Record of the operation in progress.
     pub operation: Option<NodeOperationState>,
+    /// Status that the node should eventually achieve.
+    #[serde(default)] // Ensure backwards compatibility.
+    pub status: NodeSpecStatus,
 }
 
 impl NodeSpec {
@@ -192,6 +197,7 @@ impl NodeSpec {
             draining_timestamp: None,
             sequencer: OperationSequence::new(id),
             operation: None,
+            status: SpecStatus::Creating,
         }
     }
     /// Node Nvme HOSTNQN.
@@ -529,6 +535,12 @@ impl SpecTransaction<NodeOperation> for NodeSpec {
     fn commit_op(&mut self) {
         if let Some(op) = self.operation.clone() {
             match op.operation {
+                NodeOperation::Destroy => {
+                    self.status = SpecStatus::Deleted;
+                }
+                NodeOperation::Create => {
+                    self.status = SpecStatus::Created(());
+                }
                 NodeOperation::Cordon(label) => {
                     self.cordon(label);
                 }
@@ -538,7 +550,6 @@ impl SpecTransaction<NodeOperation> for NodeSpec {
                 NodeOperation::Uncordon(label) => {
                     self.uncordon(label);
                 }
-                _ => (),
             }
         }
         self.clear_op();

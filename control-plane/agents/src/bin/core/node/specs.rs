@@ -303,14 +303,14 @@ impl SpecOperationsHelper for NodeSpec {
         }
     }
     fn start_create_op(&mut self) {
-        //self.start_op(NexusOperation::Create);
+        self.start_op(NodeOperation::Create);
     }
     fn start_destroy_op(&mut self) {
-        //self.start_op(NexusOperation::Destroy);
+        self.start_op(NodeOperation::Destroy);
     }
 
     fn dirty(&self) -> bool {
-        false //self.pending_op()
+        self.pending_op()
     }
     fn kind(&self) -> ResourceKind {
         ResourceKind::Node
@@ -319,12 +319,12 @@ impl SpecOperationsHelper for NodeSpec {
         self.id().to_string()
     }
     fn status(&self) -> SpecStatus<Self::Status> {
-        SpecStatus::Created(()) //self.spec_status.clone()
+        self.status.clone()
     }
-    fn set_status(&mut self, _status: SpecStatus<Self::Status>) {
-        //self.spec_status = status;
+    fn set_status(&mut self, status: SpecStatus<Self::Status>) {
+        self.status = status
     }
     fn operation_result(&self) -> Option<Option<bool>> {
-        None //self.operation.as_ref().map(|r| r.result)
+        self.operation.as_ref().map(|r| r.result)
     }
 }

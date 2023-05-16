@@ -1,16 +1,74 @@
 /// in here node register operation
 use agents::errors::SvcError;
 
-use stor_port::types::v0::store::node::{NodeOperation, NodeSpec};
+use stor_port::types::v0::store::node::{NodeLabels, NodeOperation, NodeSpec};
 
 use crate::controller::{
     registry::Registry,
     resources::{
-        operations::{ResourceCordon, ResourceDrain},
-        operations_helper::GuardedOperationsHelper,
+        operations::{ResourceCordon, ResourceDrain, ResourceLifecycle},
+        operations_helper::{GuardedOperationsHelper, OnCreateFail},
         OperationGuardArc,
     },
 };
+
+use stor_port::types::v0::transport::Register;
+
+#[async_trait::async_trait]
+impl ResourceLifecycle for OperationGuardArc<NodeSpec> {
+    type Create = Register;
+    type CreateOutput = Self;
+    type Destroy = ();
+
+    async fn create(
+        registry: &Registry,
+        request: &Register,
+    ) -> Result<Self::CreateOutput, SvcError> {
+        // create a guarded spec
+
+        // this must return an OperationGuard object, and call start_create() etc here
+
+        let _node2 = {
+            let mut specs = registry.specs().write();
+            match specs.nodes.get(&request.id) {
+                Some(node_spec) => {
+                    let mut node_spec = node_spec.lock();
+                    node_spec.set_endpoint(request.grpc_endpoint);
+                    node_spec.set_nqn(request.node_nqn.clone());
+                    node_spec.clone()
+                }
+                None => {
+                    let node = NodeSpec::new(
+                        request.id.clone(),
+                        request.grpc_endpoint,
+                        NodeLabels::new(),
+                        None,
+                        request.node_nqn.clone(),
+                    );
+                    specs.nodes.insert(node.clone());
+                    node
+                }
+            }
+        };
+        let guarded_node = registry.specs().guarded_node(&request.id).await?;
+
+        let result = guarded_node.start_create(registry, request).await;
+
+        let _node_state = guarded_node
+            .complete_create(result, registry, OnCreateFail::SetDeleting)
+            .await?;
+
+        Ok(guarded_node)
+    }
+
+    async fn destroy(
+        &mut self,
+        _registry: &Registry,
+        _request: &Self::Destroy,
+    ) -> Result<(), SvcError> {
+        unimplemented!()
+    }
+}
 
 /// Resource Cordon Operations.
 #[async_trait::async_trait]
