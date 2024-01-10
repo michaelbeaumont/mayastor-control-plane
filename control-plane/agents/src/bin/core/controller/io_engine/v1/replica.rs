@@ -15,6 +15,7 @@ use stor_port::{
 };
 
 use snafu::ResultExt;
+use tracing::info;
 
 #[async_trait::async_trait]
 impl crate::controller::io_engine::ReplicaListApi for super::RpcClient {
@@ -114,6 +115,7 @@ impl crate::controller::io_engine::ReplicaApi for super::RpcClient {
     }
 
     async fn share_replica(&self, request: &ShareReplica) -> Result<String, SvcError> {
+        info!("share from v1");
         let uri = self
             .replica()
             .share_replica(request.to_rpc())
@@ -128,6 +130,7 @@ impl crate::controller::io_engine::ReplicaApi for super::RpcClient {
     }
 
     async fn unshare_replica(&self, request: &UnshareReplica) -> Result<String, SvcError> {
+        info!("Calling unshare in v1");
         let uri = self
             .replica()
             .unshare_replica(request.to_rpc())

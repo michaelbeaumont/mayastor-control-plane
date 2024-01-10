@@ -8,6 +8,7 @@ use crate::controller::{
     },
 };
 use agents::errors::SvcError;
+use tracing::info;
 
 use crate::controller::resources::operations::{ResourceOwnerUpdate, ResourceSharing};
 use stor_port::types::v0::{
@@ -18,7 +19,7 @@ use stor_port::types::v0::{
     },
     transport::{
         AddNexusReplica, Child, ChildUri, Nexus, NodeId, RemoveNexusChild, RemoveNexusReplica,
-        Replica, ReplicaOwners, ShareReplica,
+        Replica, ReplicaOwners, ShareReplica, UnshareReplica, VolumeId,
     },
 };
 
@@ -33,8 +34,9 @@ impl OperationGuardArc<NexusSpec> {
         // Adding a replica to a nexus will initiate a rebuild.
         // First check that we are able to start a rebuild.
         registry.rebuild_allowed().await?;
-
-        let uri = self.make_me_replica_accessible(registry, replica).await?;
+        let uri = self
+            .make_me_replica_accessible(registry, replica, None)
+            .await?;
         let request = AddNexusReplica {
             node: self.as_ref().node.clone(),
             nexus: self.as_ref().uuid.clone(),
@@ -121,8 +123,9 @@ impl OperationGuardArc<NexusSpec> {
         &self,
         registry: &Registry,
         replica_state: &Replica,
+        vol_id: Option<VolumeId>,
     ) -> Result<ChildUri, SvcError> {
-        Self::make_replica_accessible(registry, replica_state, &self.as_ref().node).await
+        Self::make_replica_accessible(registry, replica_state, &self.as_ref().node, vol_id).await
     }
 
     /// Make the replica accessible on the specified `NodeId`.
@@ -132,20 +135,31 @@ impl OperationGuardArc<NexusSpec> {
         registry: &Registry,
         replica_state: &Replica,
         nexus_node: &NodeId,
+        vol_id: Option<VolumeId>,
     ) -> Result<ChildUri, SvcError> {
         if nexus_node == &replica_state.node {
             // on the same node, so connect via the loopback bdev
             let mut replica = registry.specs().replica(&replica_state.uuid).await?;
-            match replica.unshare(registry, &replica_state.into()).await {
+            let request: UnshareReplica =
+                UnshareReplica::from(replica_state).with_volume_id(vol_id.clone());
+            info!("unshare request is {:?}", request);
+            info!("Sharing {:?} of {:?} over bdev", replica_state.uuid, vol_id);
+            match replica.unshare(registry, &request).await {
                 Ok(uri) => Ok(uri.into()),
-                Err(SvcError::NotShared { .. }) => Ok(replica_state.uri.clone().into()),
+                Err(SvcError::NotShared { .. }) => {
+                    info!("Not shared error arm");
+                    Ok(replica_state.uri.clone().into())
+                }
                 Err(error) => Err(error),
             }
         } else {
             // on a different node, so connect via an nvmf target
             let mut replica = registry.specs().replica(&replica_state.uuid).await?;
             let allowed_hosts = registry.node_nqn(nexus_node).await?;
-            let request = ShareReplica::from(replica_state).with_hosts(allowed_hosts);
+            let request = ShareReplica::from(replica_state)
+                .with_hosts(allowed_hosts)
+                .with_vol_id(vol_id.clone());
+            info!("Sharing {:?} of {:?} over nvmf", replica_state.uuid, vol_id);
             match replica.share(registry, &request).await {
                 Ok(uri) => Ok(ChildUri::from(uri)),
                 Err(SvcError::AlreadyShared { .. }) => Ok(replica_state.uri.clone().into()),

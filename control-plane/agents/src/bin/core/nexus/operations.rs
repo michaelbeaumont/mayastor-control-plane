@@ -463,7 +463,7 @@ impl OperationGuardArc<NexusSpec> {
         for item in children.candidates() {
             // just in case the replica gets somehow shared/unshared?
             match self
-                .make_me_replica_accessible(registry, item.state())
+                .make_me_replica_accessible(registry, item.state(), None)
                 .await
             {
                 Ok(uri) => {

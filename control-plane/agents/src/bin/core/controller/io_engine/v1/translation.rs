@@ -280,10 +280,16 @@ impl AgentToIoEngine for transport::CreateReplica {
 impl AgentToIoEngine for transport::ShareReplica {
     type IoEngineMessage = v1::replica::ShareReplicaRequest;
     fn to_rpc(&self) -> Self::IoEngineMessage {
+        let volume_id = if let Some(vol) = self.volume_id.clone() {
+            Some(vol.to_string())
+        } else {
+            None
+        };
         Self::IoEngineMessage {
             uuid: self.uuid.to_string(),
             share: self.protocol as i32,
             allowed_hosts: self.allowed_hosts.clone().into_vec(),
+            volume_id,
         }
     }
 }
@@ -291,8 +297,14 @@ impl AgentToIoEngine for transport::ShareReplica {
 impl AgentToIoEngine for transport::UnshareReplica {
     type IoEngineMessage = v1::replica::UnshareReplicaRequest;
     fn to_rpc(&self) -> Self::IoEngineMessage {
+        let volume_id = if let Some(vol) = self.volume_id.clone() {
+            Some(vol.to_string())
+        } else {
+            None
+        };
         Self::IoEngineMessage {
             uuid: self.uuid.to_string(),
+            volume_id,
         }
     }
 }

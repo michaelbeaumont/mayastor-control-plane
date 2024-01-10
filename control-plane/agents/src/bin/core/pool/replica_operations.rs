@@ -21,6 +21,7 @@ use stor_port::types::v0::{
         ShareReplica, SnapshotCloneSpecParams, UnshareReplica,
     },
 };
+use tracing::info;
 
 #[async_trait::async_trait]
 impl ResourceLifecycle for OperationGuardArc<ReplicaSpec> {
@@ -120,6 +121,7 @@ impl ResourceSharing for OperationGuardArc<ReplicaSpec> {
         registry: &Registry,
         request: &Self::Unshare,
     ) -> Result<Self::UnshareOutput, SvcError> {
+        info!("unshare in OpsGuard trait");
         Some(self).unshare(registry, request).await
     }
 }
@@ -142,10 +144,11 @@ impl ResourceSharing for Option<&mut OperationGuardArc<ReplicaSpec>> {
             let status = registry.replica(&request.uuid).await?;
             let update = ReplicaOperation::Share(request.protocol, request.allowed_hosts.clone());
             let spec_clone = replica.start_update(registry, &status, update).await?;
-
+            info!("Share from rep ops");
             let result = node.share_replica(request).await;
             replica.complete_update(registry, result, spec_clone).await
         } else {
+            info!("Share from rep ops");
             node.share_replica(request).await
         }
     }
@@ -155,17 +158,19 @@ impl ResourceSharing for Option<&mut OperationGuardArc<ReplicaSpec>> {
         registry: &Registry,
         request: &Self::Unshare,
     ) -> Result<Self::UnshareOutput, SvcError> {
+        info!("unshare entered in replica ops");
         let node = registry.node_wrapper(&request.node).await?;
-
+        info!("unshare got node wrapper in replica ops");
         if let Some(replica) = self {
             let status = registry.replica(&request.uuid).await?;
             let spec_clone = replica
                 .start_update(registry, &status, ReplicaOperation::Unshare)
                 .await?;
-
+            info!("unshare called in replica ops");
             let result = node.unshare_replica(request).await;
             replica.complete_update(registry, result, spec_clone).await
         } else {
+            info!("unshare called in replica ops");
             node.unshare_replica(request).await
         }
     }

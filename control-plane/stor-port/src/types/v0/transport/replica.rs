@@ -617,12 +617,18 @@ pub struct ShareReplica {
     pub protocol: ReplicaShareProtocol,
     /// Nqn of hosts allowed to connect to the replica.
     pub allowed_hosts: Vec<HostNqn>,
+    pub volume_id: Option<VolumeId>,
 }
 
 impl ShareReplica {
     /// Get `Self` with the provided allowed_hosts.
     pub fn with_hosts(mut self, hosts: Vec<HostNqn>) -> Self {
         self.allowed_hosts = hosts;
+        self
+    }
+
+    pub fn with_vol_id(mut self, vol_id: Option<VolumeId>) -> Self {
+        self.volume_id = vol_id;
         self
     }
 }
@@ -635,6 +641,7 @@ impl From<ShareReplica> for UnshareReplica {
             pool_uuid: share.pool_uuid,
             uuid: share.uuid,
             name: share.name,
+            volume_id: share.volume_id,
         }
     }
 }
@@ -648,6 +655,7 @@ impl From<&Replica> for ShareReplica {
             name: from.name.clone().into(),
             protocol: ReplicaShareProtocol::Nvmf,
             allowed_hosts: vec![],
+            volume_id: None,
         }
     }
 }
@@ -660,6 +668,7 @@ impl From<&Replica> for UnshareReplica {
             pool_uuid: from.pool_uuid,
             uuid: from.uuid,
             name: from.name.into(),
+            volume_id: None,
         }
     }
 }
@@ -673,6 +682,7 @@ impl From<UnshareReplica> for ShareReplica {
             name: share.name,
             protocol: ReplicaShareProtocol::Nvmf,
             allowed_hosts: vec![],
+            volume_id: share.volume_id,
         }
     }
 }
@@ -691,6 +701,14 @@ pub struct UnshareReplica {
     pub uuid: ReplicaId,
     /// Name of the replica.
     pub name: Option<ReplicaName>,
+    pub volume_id: Option<VolumeId>,
+}
+
+impl UnshareReplica {
+    pub fn with_volume_id(mut self, vol_id: Option<VolumeId>) -> Self {
+        self.volume_id = vol_id;
+        self
+    }
 }
 
 /// The protocol used to share the replica.

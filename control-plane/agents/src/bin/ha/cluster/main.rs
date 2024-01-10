@@ -76,7 +76,6 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::args();
     println!("Using options: {cli:?}");
     initialize_tracing(&cli);
-
     // Initialise the core client to be used in rest
     CORE_CLIENT
         .set(CoreClient::new(cli.core_grpc, None).await)

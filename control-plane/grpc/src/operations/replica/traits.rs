@@ -871,6 +871,7 @@ impl From<&dyn ShareReplicaInfo> for ShareReplica {
             name: data.name(),
             protocol: data.protocol(),
             allowed_hosts: data.allowed_hosts(),
+            volume_id: None,
         }
     }
 }
@@ -895,6 +896,7 @@ impl From<&dyn UnshareReplicaInfo> for UnshareReplica {
             pool_uuid: data.pool_uuid(),
             uuid: data.uuid(),
             name: data.name(),
+            volume_id: None,
         }
     }
 }

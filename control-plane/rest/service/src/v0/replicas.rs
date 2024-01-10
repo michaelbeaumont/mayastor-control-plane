@@ -100,6 +100,7 @@ async fn share_replica(
             uuid: replica_id,
             protocol,
             allowed_hosts: conv_hosts(allowed_hosts)?,
+            volume_id: None,
         },
         Filter::PoolReplica(pool_id, replica_id) => {
             let node_id = match replica_client().get(filter, None).await {
@@ -115,6 +116,7 @@ async fn share_replica(
                 uuid: replica_id,
                 protocol,
                 allowed_hosts: conv_hosts(allowed_hosts)?,
+                volume_id: None,
             }
         }
         _ => {
@@ -138,6 +140,7 @@ async fn unshare_replica(filter: Filter) -> Result<(), RestError<RestJsonError>>
             pool_uuid: None,
             name: None,
             uuid: replica_id,
+            volume_id: None,
         },
         Filter::PoolReplica(pool_id, replica_id) => {
             let node_id = match replica_client().get(filter, None).await {
@@ -151,6 +154,7 @@ async fn unshare_replica(filter: Filter) -> Result<(), RestError<RestJsonError>>
                 pool_uuid: None,
                 name: None,
                 uuid: replica_id,
+                volume_id: None,
             }
         }
         _ => {

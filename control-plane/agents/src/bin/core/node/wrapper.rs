@@ -37,7 +37,7 @@ use stor_port::{
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use std::{future::Future, ops::DerefMut, sync::Arc};
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 type NodeResourceStates = (
     Vec<Replica>,
@@ -1341,6 +1341,7 @@ impl ReplicaApi for Arc<tokio::sync::RwLock<NodeWrapper>> {
     /// Share a replica on the pool via gRPC.
     async fn share_replica(&self, request: &ShareReplica) -> Result<String, SvcError> {
         let dataplane = self.grpc_client_locked(request.id()).await?;
+        info!("Share from node wrapper");
         let share = dataplane.share_replica(request).await?;
         let mut ctx = dataplane.reconnect(GETS_TIMEOUT).await?;
         self.update_replica_states(ctx.deref_mut()).await?;
@@ -1349,6 +1350,7 @@ impl ReplicaApi for Arc<tokio::sync::RwLock<NodeWrapper>> {
 
     /// Unshare a replica on the pool via gRPC.
     async fn unshare_replica(&self, request: &UnshareReplica) -> Result<String, SvcError> {
+        info!("Calling unshare in node wrapper");
         let dataplane = self.grpc_client_locked(request.id()).await?;
         let local_uri = dataplane.unshare_replica(request).await?;
         let mut ctx = dataplane.reconnect(GETS_TIMEOUT).await?;

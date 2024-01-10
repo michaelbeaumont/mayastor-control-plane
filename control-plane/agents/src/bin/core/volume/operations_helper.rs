@@ -595,6 +595,7 @@ impl OperationGuardArc<VolumeSpec> {
                 registry,
                 item.state(),
                 target_node,
+                Some(vol_spec.uuid.clone()),
             )
             .await
             {
