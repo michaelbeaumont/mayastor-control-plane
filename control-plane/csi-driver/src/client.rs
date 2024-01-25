@@ -1,4 +1,3 @@
-use crate::CsiControllerConfig;
 use std::collections::HashMap;
 use stor_port::types::v0::openapi::{
     clients,
@@ -10,9 +9,10 @@ use stor_port::types::v0::openapi::{
     },
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use once_cell::sync::OnceCell;
-use tracing::{debug, info, instrument};
+use tonic::Status;
+use tracing::{debug, instrument};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ApiClientError {
@@ -40,6 +40,24 @@ pub enum ApiClientError {
     Unavailable(String),
     /// Precondition Failed.
     PreconditionFailed(String),
+}
+
+impl From<ApiClientError> for Status {
+    fn from(error: ApiClientError) -> Self {
+        match error {
+            ApiClientError::ResourceNotExists(reason) => Status::not_found(reason),
+            ApiClientError::NotImplemented(reason) => Status::unimplemented(reason),
+            ApiClientError::RequestTimeout(reason) => Status::deadline_exceeded(reason),
+            ApiClientError::Conflict(reason) => Status::aborted(reason),
+            ApiClientError::Aborted(reason) => Status::aborted(reason),
+            ApiClientError::Unavailable(reason) => Status::unavailable(reason),
+            ApiClientError::InvalidArgument(reason) => Status::invalid_argument(reason),
+            // TODO: Revisit the error mapping. Currently handled specifically for snapshot create.
+            // ApiClientError::PreconditionFailed(reason) => Status::resource_exhausted(reason),
+            // ApiClientError::ResourceExhausted(reason) => Status::resource_exhausted(reason),
+            error => Status::internal(format!("Operation failed: {error:?}")),
+        }
+    }
 }
 
 /// Placeholder for volume topology for volume creation operation.
@@ -93,7 +111,7 @@ impl From<clients::tower::Error<RestJsonError>> for ApiClientError {
     }
 }
 
-static REST_CLIENT: OnceCell<IoEngineApiClient> = OnceCell::new();
+pub static REST_CLIENT: OnceCell<IoEngineApiClient> = OnceCell::new();
 
 /// Single instance API client for accessing REST API gateway.
 /// Encapsulates communication with REST API by exposing a set of
@@ -101,68 +119,32 @@ static REST_CLIENT: OnceCell<IoEngineApiClient> = OnceCell::new();
 /// of API request/response objects.
 #[derive(Debug)]
 pub struct IoEngineApiClient {
-    rest_client: clients::tower::ApiClient,
+    pub rest_client: clients::tower::ApiClient,
 }
 
 impl IoEngineApiClient {
-    /// Initialize API client instance. Must be called prior to
-    /// obtaining the client instance.
-    pub(crate) fn initialize() -> Result<()> {
-        if REST_CLIENT.get().is_some() {
-            return Err(anyhow!("API client already initialized"));
-        }
-
-        let cfg = CsiControllerConfig::get_config();
-        let endpoint = cfg.rest_endpoint();
-
-        let url = clients::tower::Url::parse(endpoint)
-            .map_err(|error| anyhow!("Invalid API endpoint URL {}: {:?}", endpoint, error))?;
-        let concurrency_limit = cfg.create_volume_limit() * 2;
-        let tower = clients::tower::Configuration::builder()
-            .with_timeout(cfg.io_timeout())
-            .with_concurrency_limit(Some(concurrency_limit))
-            .build_url(url)
-            .map_err(|error| {
-                anyhow::anyhow!(
-                    "Failed to create openapi configuration, Error: '{:?}'",
-                    error
-                )
-            })?;
-
-        REST_CLIENT.get_or_init(|| Self {
-            rest_client: clients::tower::ApiClient::new(tower.clone()),
-        });
-
-        info!(
-            "API client is initialized with endpoint {}, I/O timeout = {:?}",
-            endpoint,
-            cfg.io_timeout(),
-        );
-        Ok(())
-    }
-
     /// Obtain client instance. Panics if called before the client
     /// has been initialized.
-    pub(crate) fn get_client() -> &'static IoEngineApiClient {
+    pub fn get_client() -> &'static IoEngineApiClient {
         REST_CLIENT.get().expect("Rest client is not initialized")
     }
 }
 
 /// Token used to list volumes with pagination.
-pub(crate) enum ListToken {
+pub enum ListToken {
     String(String),
     Number(isize),
 }
 
 impl IoEngineApiClient {
     /// List all nodes available in IoEngine cluster.
-    pub(crate) async fn list_nodes(&self) -> Result<Vec<Node>, ApiClientError> {
+    pub async fn list_nodes(&self) -> Result<Vec<Node>, ApiClientError> {
         let response = self.rest_client.nodes_api().get_nodes(None).await?;
         Ok(response.into_body())
     }
 
     /// Get a particular node available in IoEngine cluster.
-    pub(crate) async fn get_node(&self, node_id: &str) -> Result<Node, ApiClientError> {
+    pub async fn get_node(&self, node_id: &str) -> Result<Node, ApiClientError> {
         let response = self
             .rest_client
             .nodes_api()
@@ -175,13 +157,13 @@ impl IoEngineApiClient {
     }
 
     /// List all pools available in IoEngine cluster.
-    pub(crate) async fn list_pools(&self) -> Result<Vec<Pool>, ApiClientError> {
+    pub async fn list_pools(&self) -> Result<Vec<Pool>, ApiClientError> {
         let response = self.rest_client.pools_api().get_pools().await?;
         Ok(response.into_body())
     }
 
     /// List all volumes available in IoEngine cluster.
-    pub(crate) async fn list_volumes(
+    pub async fn list_volumes(
         &self,
         max_entries: i32,
         starting_token: ListToken,
@@ -206,7 +188,7 @@ impl IoEngineApiClient {
     }
 
     /// List pools available on target IoEngine node.
-    pub(crate) async fn get_node_pools(&self, node: &str) -> Result<Vec<Pool>, ApiClientError> {
+    pub async fn get_node_pools(&self, node: &str) -> Result<Vec<Pool>, ApiClientError> {
         let pools = self.rest_client.pools_api().get_node_pools(node).await?;
         Ok(pools.into_body())
     }
@@ -215,7 +197,7 @@ impl IoEngineApiClient {
     /// This operation is not idempotent, so the caller is responsible for taking
     /// all actions with regards to idempotency.
     #[instrument(fields(volume.uuid = %volume_id), skip(self, volume_id))]
-    pub(crate) async fn create_volume(
+    pub async fn create_volume(
         &self,
         volume_id: &uuid::Uuid,
         replicas: u8,
@@ -250,7 +232,7 @@ impl IoEngineApiClient {
     /// all actions with regards to idempotency.
     #[allow(clippy::too_many_arguments)]
     #[instrument(fields(volume.uuid = %volume_id, snapshot.uuid = %snapshot_id), skip(self, volume_id, snapshot_id))]
-    pub(crate) async fn create_snapshot_volume(
+    pub async fn create_snapshot_volume(
         &self,
         volume_id: &uuid::Uuid,
         snapshot_id: &uuid::Uuid,
@@ -285,7 +267,7 @@ impl IoEngineApiClient {
     /// This operation is idempotent, so the caller does not see errors indicating
     /// absence of the resource.
     #[instrument(fields(volume.uuid = %volume_id), skip(self, volume_id))]
-    pub(crate) async fn delete_volume(&self, volume_id: &uuid::Uuid) -> Result<(), ApiClientError> {
+    pub async fn delete_volume(&self, volume_id: &uuid::Uuid) -> Result<(), ApiClientError> {
         Self::delete_idempotent(
             self.rest_client.volumes_api().del_volume(volume_id).await,
             true,
@@ -295,7 +277,7 @@ impl IoEngineApiClient {
     }
 
     /// Check HTTP status code, handle DELETE idempotency transparently.
-    pub(crate) fn delete_idempotent<T>(
+    pub fn delete_idempotent<T>(
         result: Result<clients::tower::ResponseContent<T>, clients::tower::Error<RestJsonError>>,
         idempotent: bool,
     ) -> Result<(), ApiClientError> {
@@ -322,17 +304,14 @@ impl IoEngineApiClient {
 
     /// Get specific volume.
     #[instrument(fields(volume.uuid = %volume_id), skip(self, volume_id))]
-    pub(crate) async fn get_volume(
-        &self,
-        volume_id: &uuid::Uuid,
-    ) -> Result<Volume, ApiClientError> {
+    pub async fn get_volume(&self, volume_id: &uuid::Uuid) -> Result<Volume, ApiClientError> {
         let volume = self.rest_client.volumes_api().get_volume(volume_id).await?;
         Ok(volume.into_body())
     }
 
     /// Get specific volume.
     #[instrument(fields(volume.uuid = %volume_id), skip(self, volume_id))]
-    pub(crate) async fn get_volume_for_create(
+    pub async fn get_volume_for_create(
         &self,
         volume_id: &uuid::Uuid,
     ) -> Result<Volume, ApiClientError> {
@@ -350,7 +329,7 @@ impl IoEngineApiClient {
 
     /// Unpublish volume (i.e. destroy a target which exposes the volume).
     #[instrument(fields(volume.uuid = %volume_id), skip(self, volume_id))]
-    pub(crate) async fn unpublish_volume(
+    pub async fn unpublish_volume(
         &self,
         volume_id: &uuid::Uuid,
         force: bool,
@@ -368,7 +347,7 @@ impl IoEngineApiClient {
 
     /// Publish volume (i.e. make it accessible via specified protocol by creating a target).
     #[instrument(fields(volume.uuid = %volume_id), skip(self, volume_id))]
-    pub(crate) async fn publish_volume(
+    pub async fn publish_volume(
         &self,
         volume_id: &uuid::Uuid,
         node: Option<&str>,
@@ -394,7 +373,7 @@ impl IoEngineApiClient {
 
     /// Create a volume snapshot.
     #[instrument(fields(volume.uuid = %volume_id, snapshot.source_uuid = %volume_id, snapshot.uuid = %snapshot_id), skip(self, volume_id, snapshot_id))]
-    pub(crate) async fn create_volume_snapshot(
+    pub async fn create_volume_snapshot(
         &self,
         volume_id: &uuid::Uuid,
         snapshot_id: &uuid::Uuid,
@@ -410,7 +389,7 @@ impl IoEngineApiClient {
 
     /// Delete a volume snapshot.
     #[instrument(fields(snapshot.uuid = %snapshot_id), skip(self, snapshot_id))]
-    pub(crate) async fn delete_volume_snapshot(
+    pub async fn delete_volume_snapshot(
         &self,
         snapshot_id: &uuid::Uuid,
     ) -> Result<(), ApiClientError> {
@@ -427,7 +406,7 @@ impl IoEngineApiClient {
 
     /// List volume snapshots.
     #[instrument(fields(snapshot.source_uuid = ?volume_id, snapshot.uuid = ?snapshot_id), skip(self, volume_id, snapshot_id))]
-    pub(crate) async fn list_volume_snapshots(
+    pub async fn list_volume_snapshots(
         &self,
         volume_id: Option<uuid::Uuid>,
         snapshot_id: Option<uuid::Uuid>,
@@ -471,7 +450,7 @@ impl IoEngineApiClient {
 
     /// Get volume snapshot.
     #[instrument(fields(snapshot.uuid = ?snapshot_id), skip(self, snapshot_id))]
-    pub(crate) async fn get_volumes_snapshot(
+    pub async fn get_volumes_snapshot(
         &self,
         snapshot_id: &uuid::Uuid,
     ) -> Result<models::VolumeSnapshot, ApiClientError> {

@@ -54,6 +54,8 @@ pub mod node;
 /// The csi driver components.
 pub use rpc::csi;
 
+/// Rest Api Client
+pub mod client;
 /// The volume contexts.
 pub mod context;
 /// Filesystem Operations.

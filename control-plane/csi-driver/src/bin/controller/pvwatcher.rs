@@ -1,4 +1,4 @@
-use crate::client::ListToken;
+use csi_driver::client::ListToken;
 use futures::TryStreamExt;
 use k8s_openapi::api::core::v1::PersistentVolume;
 use kube::{
