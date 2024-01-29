@@ -948,6 +948,7 @@ dependencies = [
  "k8s-openapi",
  "kube",
  "lazy_static",
+ "log",
  "nix",
  "nvmeadm",
  "once_cell",
