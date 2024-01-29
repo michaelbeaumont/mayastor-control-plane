@@ -9,7 +9,7 @@ mod pvwatcher;
 mod server;
 
 use config::CsiControllerConfig;
-use csi_driver::client::{IoEngineApiClient, REST_CLIENT};
+use csi_driver::client::{RestApiClient, REST_CLIENT};
 use stor_port::types::v0::openapi::clients;
 
 const CSI_SOCKET: &str = "/var/tmp/csi.sock";
@@ -40,7 +40,7 @@ pub(crate) fn initialize_rest_api() -> anyhow::Result<()> {
             )
         })?;
 
-    REST_CLIENT.get_or_init(|| IoEngineApiClient {
+    REST_CLIENT.get_or_init(|| RestApiClient {
         rest_client: clients::tower::ApiClient::new(tower.clone()),
     });
 
@@ -64,7 +64,7 @@ fn initialize_controller(args: &ArgMatches) -> anyhow::Result<()> {
 async fn ping_rest_api() {
     info!("Checking REST API endpoint accessibility ...");
 
-    match IoEngineApiClient::get_client().list_nodes().await {
+    match RestApiClient::get_client().list_nodes().await {
         Err(error) => tracing::error!(?error, "REST API endpoint is not accessible"),
         Ok(nodes) => {
             let names: Vec<String> = nodes.into_iter().map(|n| n.id).collect();

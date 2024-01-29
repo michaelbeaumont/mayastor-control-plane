@@ -18,15 +18,17 @@ use grpc::csi_node_nvme::nvme_operations_server::NvmeOperationsServer;
 use stor_port::platform;
 use utils::tracing_telemetry::{FmtLayer, FmtStyle};
 
-use clap::Arg;
-use futures::TryFutureExt;
-use k8s_openapi::api::core::v1::Node as K8sNode;
-use kube::{
-    api::{Patch, PatchParams},
-    Api, Client,
+use crate::{
+    k8s::{get_node_labels, patch_k8s_node},
+    registration::run_registration_loop,
 };
+use anyhow::anyhow;
+use clap::Arg;
+use csi_driver::client::{RestApiClient, REST_CLIENT};
+use futures::TryFutureExt;
 use serde_json::json;
 use std::{
+    collections::HashMap,
     env, fs,
     future::Future,
     io::ErrorKind,
@@ -34,13 +36,15 @@ use std::{
     str::FromStr,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
+use stor_port::types::v0::openapi::clients;
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::UnixListener,
 };
 use tonic::transport::{server::Connected, Server};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info};
 
 #[derive(Clone, Debug)]
 pub struct UdsConnectInfo {
@@ -97,6 +101,22 @@ pub(super) async fn main() -> anyhow::Result<()> {
         .about("k8s sidecar for IoEngine implementing CSI among others")
         .version(utils::version_info_str!())
         .subcommand_negates_reqs(true)
+        .arg(
+            Arg::new("rest-endpoint")
+                .long("rest-endpoint")
+                .env("ENDPOINT")
+                .default_value("http://ksnode-1:30011")
+                .help("A URL endpoint to the control plane's rest endpoint")
+                .required(true),
+        )
+        .arg(
+            Arg::new("node-ip")
+                .long("node-ip")
+                .value_name("NODE_IP")
+                .env("NODE_IP")
+                .help("Ip of node where this instance runs")
+                .required(true)
+        )
         .arg(
             Arg::new("csi-socket")
                 .short('c')
@@ -236,9 +256,21 @@ pub(super) async fn main() -> anyhow::Result<()> {
         anyhow::bail!("Failed to detect nvme_tcp kernel module. Run `modprobe nvme_tcp` to load the kernel module. {}", error);
     }
 
+    let node_name = matches.get_one::<String>("node-name").unwrap();
+    let node_ip = matches.get_one::<String>("node-ip").unwrap();
+
+    let mut csi_labels = HashMap::new();
+    let nvme_enabled = utils::check_nvme_core_ana().unwrap_or_default().to_string();
+    csi_labels.insert(utils::CSI_NODE_NVME_ANA.to_string(), nvme_enabled.clone());
+
     if platform::current_platform_type() == platform::PlatformType::K8s {
-        check_ana_and_label_node(matches.get_one::<String>("node-name").expect("required")).await?;
+        let kube_client = kube::Client::try_default().await?;
+        check_ana_and_label_node(&kube_client, node_name, nvme_enabled).await?;
+        let node_labels = get_node_labels(&kube_client, node_name).await?;
+        csi_labels.extend(node_labels);
     }
+
+    initialize_rest_api(matches.get_one::<String>("rest-endpoint").unwrap())?;
 
     if let Some(nvme_io_timeout) = matches.get_one::<String>("nvme-io-timeout") {
         let _ = humantime::Duration::from_str(nvme_io_timeout)
@@ -286,6 +318,16 @@ pub(super) async fn main() -> anyhow::Result<()> {
         result = NodePluginGrpcServer::run(sock_addr) => {
             result?;
         }
+        result = run_registration_loop(node_name.clone(), node_ip.clone(), Some(csi_labels)) => {
+            result?;
+        }
+    }
+
+    if let Err(error) = RestApiClient::get_client()
+        .deregister_app_node(node_name)
+        .await
+    {
+        error!("Failed to deregister node, {:?}", error);
     }
     Ok(())
 }
@@ -345,37 +387,54 @@ impl CsiServer {
 }
 
 /// Gets the nvme ana multipath parameter and sets on the node as a label.
-async fn check_ana_and_label_node(node_name: &str) -> anyhow::Result<()> {
-    let patch_value = utils::check_nvme_core_ana().unwrap_or_default().to_string();
-    if let Ok(client) = Client::try_default().await {
-        let nodes: Api<K8sNode> = Api::all(client);
-        let node_patch = json!({
-            "apiVersion": "v1",
-            "kind": "Node",
-            "metadata": {
-                "labels": {
-                    utils::CSI_NODE_NVME_ANA: patch_value,
-                },
+async fn check_ana_and_label_node(
+    client: &kube::client::Client,
+    node_name: &str,
+    nvme_enabled: String,
+) -> anyhow::Result<()> {
+    let node_patch = json!({
+        "apiVersion": "v1",
+        "kind": "Node",
+        "metadata": {
+            "labels": {
+                utils::CSI_NODE_NVME_ANA: nvme_enabled,
             },
-        });
-        match nodes
-            .patch(
-                node_name,
-                &PatchParams::apply("node_label_patch").force(),
-                &Patch::Apply(&node_patch),
-            )
-            .await
-        {
-            Ok(_) => trace!("Patched node: {} with patch: {}", node_name, node_patch),
-            Err(error) => anyhow::bail!(
-                "Failed to patch node: {} with patch: {}. {}",
-                node_name,
-                node_patch,
-                error
-            ),
-        }
-    } else {
-        anyhow::bail!("Failed to get an instance of k8s client")
+        },
+    });
+    patch_k8s_node(client, node_name, &node_patch).await?;
+    Ok(())
+}
+
+/// Default rest api timeout for requests.
+const DEFAULT_TIMEOUT_FOR_REST_REQUESTS: Duration = Duration::from_secs(5);
+
+/// Initialize Rest API client instance. Must be called prior to
+/// obtaining the client instance.
+pub(crate) fn initialize_rest_api(endpoint: &String) -> anyhow::Result<()> {
+    if REST_CLIENT.get().is_some() {
+        return Err(anyhow!("API client already initialized"));
     }
+
+    let url = clients::tower::Url::parse(endpoint)
+        .map_err(|error| anyhow!("Invalid API endpoint URL {}: {:?}", endpoint, error))?;
+
+    let tower = clients::tower::Configuration::builder()
+        .with_timeout(DEFAULT_TIMEOUT_FOR_REST_REQUESTS)
+        .build_url(url)
+        .map_err(|error| {
+            anyhow::anyhow!(
+                "Failed to create openapi configuration, Error: '{:?}'",
+                error
+            )
+        })?;
+
+    REST_CLIENT.get_or_init(|| RestApiClient {
+        rest_client: clients::tower::ApiClient::new(tower.clone()),
+    });
+
+    info!(
+        "API client is initialized with endpoint {}, request timeout = {:?}",
+        endpoint, DEFAULT_TIMEOUT_FOR_REST_REQUESTS,
+    );
     Ok(())
 }

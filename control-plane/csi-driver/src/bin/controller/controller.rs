@@ -1,4 +1,4 @@
-use csi_driver::client::{ApiClientError, CreateVolumeTopology, IoEngineApiClient, ListToken};
+use csi_driver::client::{ApiClientError, CreateVolumeTopology, ListToken, RestApiClient};
 
 use csi_driver::context::{CreateParams, PublishParams};
 use rpc::csi::{volume_content_source::Type, Topology as CsiTopology, *};
@@ -270,7 +270,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
         let mut volume_context = args.parameters.clone();
 
         // First check if the volume already exists.
-        match IoEngineApiClient::get_client()
+        match RestApiClient::get_client()
             .get_volume_for_create(&parsed_vol_uuid)
             .await
         {
@@ -299,7 +299,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
 
                 let volume = match volume_content_source {
                     Some(snapshot_uuid) => {
-                        IoEngineApiClient::get_client()
+                        RestApiClient::get_client()
                             .create_snapshot_volume(
                                 &parsed_vol_uuid,
                                 &snapshot_uuid,
@@ -312,7 +312,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
                             .await?
                     }
                     None => {
-                        IoEngineApiClient::get_client()
+                        RestApiClient::get_client()
                             .create_volume(
                                 &parsed_vol_uuid,
                                 replica_count,
@@ -369,7 +369,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
             Status::invalid_argument(format!("Malformed volume UUID: {}", args.volume_id))
         })?;
         let _guard = csi_driver::limiter::VolumeOpGuard::new(volume_uuid)?;
-        IoEngineApiClient::get_client()
+        RestApiClient::get_client()
             .delete_volume(&volume_uuid)
             .await
             .map_err(|e| {
@@ -418,9 +418,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
         }
 
         // Check if the volume is already published.
-        let volume = IoEngineApiClient::get_client()
-            .get_volume(&volume_id)
-            .await?;
+        let volume = RestApiClient::get_client().get_volume(&volume_id).await?;
 
         let params = PublishParams::try_from(&args.volume_context)?;
 
@@ -472,7 +470,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
 
                 // if the csi-node happens to be a data-plane node, use that for nexus creation, otherwise
                 // let the control-plane select the target node.
-                let target_node = match IoEngineApiClient::get_client().get_node(&node_id).await {
+                let target_node = match RestApiClient::get_client().get_node(&node_id).await {
                     Err(ApiClientError::ResourceNotExists(_)) => Ok(None),
                     Err(error) => Err(error),
                     // When nodes are not online for any reason (eg: io-engine no longer runs) on said node,
@@ -487,7 +485,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
                 }?;
 
                 // Volume is not published.
-                let v = IoEngineApiClient::get_client()
+                let v = RestApiClient::get_client()
                     .publish_volume(&volume_id, target_node, protocol, args.node_id.clone(), &publish_context)
                     .await?;
 
@@ -531,10 +529,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
         })?;
         let _guard = csi_driver::limiter::VolumeOpGuard::new(volume_uuid)?;
         // Check if target volume exists.
-        let volume = match IoEngineApiClient::get_client()
-            .get_volume(&volume_uuid)
-            .await
-        {
+        let volume = match RestApiClient::get_client().get_volume(&volume_uuid).await {
             Ok(volume) => volume,
             Err(ApiClientError::ResourceNotExists { .. }) => {
                 debug!("Volume {} does not exist, not unpublishing", args.volume_id);
@@ -553,7 +548,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
         }
 
         // Do forced volume upublish as Kubernetes already detached the volume.
-        IoEngineApiClient::get_client()
+        RestApiClient::get_client()
             .unpublish_volume(&volume_uuid, true)
             .await
             .map_err(|e| {
@@ -580,7 +575,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
             Status::invalid_argument(format!("Malformed volume UUID: {}", args.volume_id))
         })?;
         let _guard = csi_driver::limiter::VolumeOpGuard::new(volume_uuid)?;
-        let _volume = IoEngineApiClient::get_client()
+        let _volume = RestApiClient::get_client()
             .get_volume(&volume_uuid)
             .await
             .map_err(|_e| Status::unimplemented("Not implemented"))?;
@@ -634,7 +629,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
 
         let vt_mapper = VolumeTopologyMapper::init().await?;
 
-        let volumes = IoEngineApiClient::get_client()
+        let volumes = RestApiClient::get_client()
             .list_volumes(max_entries, ListToken::String(args.starting_token))
             .await
             .map_err(|e| Status::internal(format!("Failed to list volumes, error = {e:?}")))?;
@@ -686,7 +681,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
 
         let pools: Vec<Pool> = if let Some(node) = node {
             debug!("Calculating pool capacity for node {}", node);
-            IoEngineApiClient::get_client()
+            RestApiClient::get_client()
                 .get_node_pools(node)
                 .await
                 .map_err(|e| {
@@ -696,7 +691,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
                 })?
         } else {
             debug!("Calculating overall pool capacity");
-            IoEngineApiClient::get_client()
+            RestApiClient::get_client()
                 .list_pools()
                 .await
                 .map_err(|e| {
@@ -783,7 +778,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
             Status::invalid_argument(format!("Malformed snapshot ID: {}", request.name))
         })?;
 
-        let snapshot = IoEngineApiClient::get_client()
+        let snapshot = RestApiClient::get_client()
             .create_volume_snapshot(&volume_uuid, &snap_uuid)
             .await
             .map_err(|error| match error {
@@ -809,7 +804,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
             Status::invalid_argument(format!("Malformed snapshot UUID: {}", args.snapshot_id))
         })?;
 
-        IoEngineApiClient::get_client()
+        RestApiClient::get_client()
             .delete_volume_snapshot(&snapshot_uuid)
             .await
             .map_err(|e| {
@@ -843,7 +838,7 @@ impl rpc::csi::controller_server::Controller for CsiControllerSvc {
             return Err(Status::invalid_argument("max_entries can't be negative"));
         }
 
-        let snapshots = IoEngineApiClient::get_client()
+        let snapshots = RestApiClient::get_client()
             .list_volume_snapshots(vol_uuid, snap_uuid, max_entries, request.starting_token)
             .await?;
 

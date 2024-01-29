@@ -22,6 +22,7 @@ mod format;
 pub(crate) mod fsfreeze;
 #[cfg(target_os = "linux")]
 mod identity;
+pub(crate) mod k8s;
 #[cfg(target_os = "linux")]
 mod main_;
 #[cfg(target_os = "linux")]
@@ -36,6 +37,7 @@ mod nodeplugin_grpc;
 mod nodeplugin_nvme;
 #[cfg(target_os = "linux")]
 mod nodeplugin_svc;
+mod registration;
 /// Shutdown event which lets the plugin know it needs to stop processing new events and
 /// complete any existing ones before shutting down.
 #[cfg(target_os = "linux")]

@@ -11,6 +11,7 @@ use stor_port::types::v0::openapi::{
 
 use anyhow::Result;
 use once_cell::sync::OnceCell;
+use stor_port::types::v0::openapi::models::{AppNode, RegisterAppNode};
 use tonic::Status;
 use tracing::{debug, instrument};
 
@@ -111,21 +112,21 @@ impl From<clients::tower::Error<RestJsonError>> for ApiClientError {
     }
 }
 
-pub static REST_CLIENT: OnceCell<IoEngineApiClient> = OnceCell::new();
+pub static REST_CLIENT: OnceCell<RestApiClient> = OnceCell::new();
 
 /// Single instance API client for accessing REST API gateway.
 /// Encapsulates communication with REST API by exposing a set of
 /// high-level API functions, which perform (de)serialization
 /// of API request/response objects.
 #[derive(Debug)]
-pub struct IoEngineApiClient {
+pub struct RestApiClient {
     pub rest_client: clients::tower::ApiClient,
 }
 
-impl IoEngineApiClient {
+impl RestApiClient {
     /// Obtain client instance. Panics if called before the client
     /// has been initialized.
-    pub fn get_client() -> &'static IoEngineApiClient {
+    pub fn get_client() -> &'static RestApiClient {
         REST_CLIENT.get().expect("Rest client is not initialized")
     }
 }
@@ -136,7 +137,7 @@ pub enum ListToken {
     Number(isize),
 }
 
-impl IoEngineApiClient {
+impl RestApiClient {
     /// List all nodes available in IoEngine cluster.
     pub async fn list_nodes(&self) -> Result<Vec<Node>, ApiClientError> {
         let response = self.rest_client.nodes_api().get_nodes(None).await?;
@@ -461,5 +462,43 @@ impl IoEngineApiClient {
             .await?;
 
         Ok(snapshot.into_body())
+    }
+
+    /// Register a frontend node.
+    pub async fn register_app_node(
+        &self,
+        app_node_id: &str,
+        endpoint: &str,
+        labels: &Option<HashMap<String, String>>,
+    ) -> Result<(), ApiClientError> {
+        self.rest_client
+            .app_nodes_api()
+            .register_app_node(
+                app_node_id,
+                RegisterAppNode::new_all(endpoint, labels.clone()),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    /// Deregister a app node.
+    pub async fn deregister_app_node(&self, app_node_id: &str) -> Result<(), ApiClientError> {
+        self.rest_client
+            .app_nodes_api()
+            .deregister_app_node(app_node_id)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Get a app node.
+    pub async fn get_app_node(&self, app_node_id: &str) -> Result<AppNode, ApiClientError> {
+        let response = self
+            .rest_client
+            .app_nodes_api()
+            .get_app_node(app_node_id)
+            .await?;
+        Ok(response.into_body())
     }
 }
