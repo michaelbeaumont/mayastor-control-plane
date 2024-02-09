@@ -6,6 +6,7 @@ use crate::{
     mount,
 };
 use strum_macros::{AsRefStr, Display, EnumString};
+use tracing::log::info;
 use uuid::Uuid;
 
 pub(crate) mod ioctl;
@@ -42,6 +43,7 @@ pub(crate) async fn fsfreeze(volume_id: &str, command: FsFreezeOpt) -> Result<()
 
     let device_path = device.devname();
     if let Some(mnt) = mount::find_mount(Some(&device_path), None) {
+        println!("In fsfreeze, found mount: {:?}", mnt);
         // Make a preflight check, to ensure subsystem has at least one live path.
         let device_nqn = device.devnqn();
         fsfreeze_preflight_check(volume_id, device_nqn).map_err(|errno| {
@@ -67,12 +69,14 @@ pub(crate) async fn fsfreeze(volume_id: &str, command: FsFreezeOpt) -> Result<()
         // Use findmnt to work out if volume is mounted as a raw
         // block, i.e. we get some matches, and return the
         // BlockDeviceMount error.
+        println!("In fsfreeze, volume is not mounted, checking if it is a raw block volume");
         let mountpaths = findmnt::get_mountpaths(&device_path).map_err(|error| {
             FsfreezeError::InternalFailure {
                 source: error,
                 volume_id: volume_id.to_string(),
             }
         })?;
+        println!("In fsfreeze, mountpaths: {:?}", mountpaths);
         if !mountpaths.is_empty() {
             return Err(FsfreezeError::BlockDeviceMount {
                 volume_id: volume_id.to_string(),

@@ -288,6 +288,28 @@ impl Cluster {
         Ok(CsiNodeClient { csi, internal })
     }
 
+    /// Return a grpc handle to the csi-controller.
+    pub async fn csi_controller_client(&self) -> Result<CsiControllerClient, Error> {
+        let endpoint = tonic::transport::Endpoint::try_from("http://[::]")?
+            .connect_timeout(Duration::from_millis(100));
+        let channel = loop {
+            let csi_socket = CSI_SOCKET.to_string();
+            match endpoint
+                .connect_with_connector(tower::service_fn(move |_: Uri| {
+                    UnixStream::connect(csi_socket.to_string())
+                }))
+                .await
+            {
+                Ok(channel) => break channel,
+                Err(_) => tokio::time::sleep(Duration::from_millis(50)).await,
+            }
+        };
+
+        let csi = rpc::csi::controller_client::ControllerClient::new(channel);
+
+        Ok(CsiControllerClient { csi })
+    }
+
     /// Restart the core agent.
     pub async fn restart_core(&self) {
         self.remove_store_lock(ControlPlaneService::CoreAgent).await;
@@ -820,6 +842,12 @@ impl ClusterBuilder {
         self.opts = self.opts.with_csi(controller, node);
         self
     }
+    /// Specify whether csi node registration should be enabled.
+    #[must_use]
+    pub fn with_csi_registration(mut self, opt: bool) -> Self {
+        self.opts = self.opts.with_csi_registration(opt);
+        self
+    }
     /// Specify whether jaeger is enabled or not.
     #[must_use]
     pub fn with_jaeger(mut self, enabled: bool) -> Self {
@@ -1140,5 +1168,21 @@ impl CsiNodeClient {
         };
         let response = self.csi.node_unstage_volume(request).await?;
         Ok(response.into_inner())
+    }
+}
+
+const CSI_SOCKET: &str = "/var/tmp/csi-controller.sock";
+
+/// Bundles the csi controller client.
+pub struct CsiControllerClient {
+    csi: csi_driver::csi::controller_client::ControllerClient<tonic::transport::Channel>,
+}
+
+impl CsiControllerClient {
+    /// Get a mutable reference to the csi controller client.
+    pub fn csi(
+        &mut self,
+    ) -> &mut csi_driver::csi::controller_client::ControllerClient<tonic::transport::Channel> {
+        &mut self.csi
     }
 }

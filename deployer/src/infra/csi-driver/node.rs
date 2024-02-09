@@ -147,7 +147,7 @@ impl CsiNode {
             .with_args(vec!["--csi-socket", socket]);
 
         if enable_registation {
-            let endpoint = format!("{}:10199", cfg.next_ip_for_name(container_name)?);
+            let endpoint = format!("{}:50051", cfg.next_ip_for_name(container_name)?);
             binary = binary
                 .with_args(vec!["--enable-registration"])
                 .with_args(vec!["--rest-endpoint", "http://rest:8081"])
