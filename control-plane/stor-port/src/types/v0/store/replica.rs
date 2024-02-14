@@ -75,6 +75,7 @@ pub struct ReplicaSpec {
     pub name: ReplicaName,
     /// uuid of the replica
     pub uuid: ReplicaId,
+    pub owner_id: Option<VolumeId>,
     /// The size that the replica should be.
     pub size: u64,
     /// Reference of a pool that the replica should live on.
@@ -159,10 +160,13 @@ mod tests_deserializer {
         }
         let tests: Vec<Test> = vec![
             Test {
-                input: r#"{"name":"30b1a62e-4301-445b-88af-125eca1dcc6d","uuid":"30b1a62e-4301-445b-88af-125eca1dcc6d","size":10485761,"pool":"pool-1","share":"none","thin":false,"status":{"Created":"online"},"managed":true,"owners":{"volume":"ec4e66fd-3b33-4439-b504-d49aba53da26","disown_all":false},"operation":null}"#,
+                input: r#"{"name":"30b1a62e-4301-445b-88af-125eca1dcc6d","uuid":"30b1a62e-4301-445b-88af-125eca1dcc6d","owner_id": "ec4e66fd-3b33-4439-b504-d49aba53da26","size":10485761,"pool":"pool-1","share":"none","thin":false,"status":{"Created":"online"},"managed":true,"owners":{"volume":"ec4e66fd-3b33-4439-b504-d49aba53da26","disown_all":false},"operation":null}"#,
                 expected: ReplicaSpec {
                     name: "30b1a62e-4301-445b-88af-125eca1dcc6d".into(),
                     uuid: ReplicaId::try_from("30b1a62e-4301-445b-88af-125eca1dcc6d").unwrap(),
+                    owner_id: Some(
+                        VolumeId::try_from("ec4e66fd-3b33-4439-b504-d49aba53da26").unwrap(),
+                    ),
                     size: 10485761,
                     pool: PoolRef::Named("pool-1".into()),
                     share: Protocol::None,
@@ -180,10 +184,13 @@ mod tests_deserializer {
                 },
             },
             Test {
-                input: r#"{"name":"30b1a62e-4301-445b-88af-125eca1dcc6d","uuid":"30b1a62e-4301-445b-88af-125eca1dcc6d","size":10485761,"pool":["pool-1","22ca10d3-4f2b-4b95-9814-9181c025cc1a"],"share":"none","thin":false,"status":{"Created":"online"},"managed":true,"owners":{"volume":"ec4e66fd-3b33-4439-b504-d49aba53da26","disown_all":false},"operation":null}"#,
+                input: r#"{"name":"30b1a62e-4301-445b-88af-125eca1dcc6d","uuid":"30b1a62e-4301-445b-88af-125eca1dcc6d","owner_id": "ec4e66fd-3b33-4439-b504-d49aba53da26","size":10485761,"pool":["pool-1","22ca10d3-4f2b-4b95-9814-9181c025cc1a"],"share":"none","thin":false,"status":{"Created":"online"},"managed":true,"owners":{"volume":"ec4e66fd-3b33-4439-b504-d49aba53da26","disown_all":false},"operation":null}"#,
                 expected: ReplicaSpec {
                     name: "30b1a62e-4301-445b-88af-125eca1dcc6d".into(),
                     uuid: ReplicaId::try_from("30b1a62e-4301-445b-88af-125eca1dcc6d").unwrap(),
+                    owner_id: Some(
+                        VolumeId::try_from("ec4e66fd-3b33-4439-b504-d49aba53da26").unwrap(),
+                    ),
                     size: 10485761,
                     pool: PoolRef::Uuid(
                         "pool-1".into(),
@@ -275,6 +282,9 @@ impl SpecTransaction<ReplicaOperation> for ReplicaSpec {
                 ReplicaOperation::Resize(size) => {
                     self.size = size;
                 }
+                ReplicaOperation::SetOwner(owner) => {
+                    self.owner_id = Some(owner);
+                }
             }
         }
         self.clear_op();
@@ -309,6 +319,7 @@ impl SpecTransaction<ReplicaOperation> for ReplicaSpec {
             ReplicaOperation::Unshare => (true, true),
             ReplicaOperation::OwnerUpdate(_) => (false, true),
             ReplicaOperation::Resize(_) => (true, true),
+            ReplicaOperation::SetOwner(_) => (true, true),
         }
     }
 
@@ -326,6 +337,7 @@ pub enum ReplicaOperation {
     Unshare,
     OwnerUpdate(ReplicaOwners),
     Resize(u64),
+    SetOwner(VolumeId),
 }
 
 /// Key used by the store to uniquely identify a ReplicaSpec structure.
@@ -367,6 +379,7 @@ impl From<&ReplicaSpec> for transport::Replica {
             node: NodeId::default(),
             name: replica.name.clone(),
             uuid: replica.uuid.clone(),
+            owner_id: None,
             pool_id: replica.pool.pool_name().clone(),
             pool_uuid: replica.pool.pool_uuid(),
             thin: replica.thin,
@@ -389,6 +402,7 @@ impl From<&CreateReplica> for ReplicaSpec {
         Self {
             name: ReplicaName::from_opt_uuid(request.name.as_ref(), &request.uuid),
             uuid: request.uuid.clone(),
+            owner_id: request.owner_id.clone(),
             size: request.size,
             pool: match request.pool_uuid.clone() {
                 Some(uuid) => PoolRef::Uuid(request.pool_id.clone(), uuid),
@@ -431,6 +445,7 @@ impl From<&SnapshotCloneSpecParams> for CreateReplica {
             node: value.node().clone(),
             name: Some(ReplicaName::from_string(request.name().to_string())),
             uuid: request.uuid().clone(),
+            owner_id: Some(value.uuid().clone()),
             pool_id: value.pool().pool_name().clone(),
             pool_uuid: value.pool().pool_uuid(),
             size: value.size(),
@@ -449,6 +464,7 @@ impl From<&SnapshotCloneSpecParams> for ReplicaSpec {
         Self {
             name: ReplicaName::from_string(request.name().to_string()),
             uuid: request.uuid().into(),
+            owner_id: Some(value.uuid().clone()),
             size: value.size(),
             pool: value.pool().clone(),
             share: Protocol::None,

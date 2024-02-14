@@ -353,6 +353,8 @@ impl ResourceShutdownOperations for OperationGuardArc<NexusSpec> {
 #[async_trait::async_trait]
 impl ResourceOwnerUpdate for OperationGuardArc<NexusSpec> {
     type Update = NexusOwners;
+    type Owner = ();
+    type SetOutput = ();
 
     async fn remove_owners(
         &mut self,
@@ -380,6 +382,14 @@ impl ResourceOwnerUpdate for OperationGuardArc<NexusSpec> {
             }
             Err(error) => Err(error),
         }
+    }
+
+    async fn set_owner(
+        &mut self,
+        _registry: &Registry,
+        _request: &Self::Owner,
+    ) -> Result<Self::SetOutput, SvcError> {
+        unimplemented!()
     }
 }
 
@@ -463,7 +473,7 @@ impl OperationGuardArc<NexusSpec> {
         for item in children.candidates() {
             // just in case the replica gets somehow shared/unshared?
             match self
-                .make_me_replica_accessible(registry, item.state())
+                .make_me_replica_accessible(registry, item.state(), nexus.owner.clone())
                 .await
             {
                 Ok(uri) => {

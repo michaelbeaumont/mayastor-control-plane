@@ -20,6 +20,7 @@ use stor_port::{
 };
 
 use std::{convert::TryFrom, time::UNIX_EPOCH};
+use stor_port::types::v0::transport::VolumeId;
 
 /// Trait for converting agent messages to io-engine messages.
 pub(super) trait AgentToIoEngine {
@@ -90,6 +91,15 @@ impl TryIoEngineToAgent for v1::replica::Replica {
                 uuid: self.uuid.to_owned(),
                 kind: ResourceKind::Replica,
             })?,
+            owner_id: match &self.owner_id {
+                None => None,
+                Some(owner_id) => Some(VolumeId::try_from(owner_id.clone()).map_err(|_| {
+                    SvcError::InvalidUuid {
+                        uuid: "".to_string(),
+                        kind: ResourceKind::Replica,
+                    }
+                })?),
+            },
             pool_id: self.poolname.clone().into(),
             pool_uuid: Some(PoolUuid::try_from(self.pooluuid.clone()).map_err(|_| {
                 SvcError::InvalidUuid {
@@ -259,6 +269,7 @@ impl AgentToIoEngine for transport::CreateReplica {
         Self::IoEngineMessage {
             name: ReplicaName::from_opt_uuid(self.name.as_ref(), &self.uuid).into(),
             uuid: self.uuid.clone().into(),
+            owner_id: self.owner_id.clone().map(|id| id.into()),
             pooluuid: match self.pool_uuid.clone() {
                 Some(uuid) => uuid.into(),
                 // TODO: implement a getter function to fetch the uuid of the pool from the given
@@ -313,6 +324,16 @@ impl AgentToIoEngine for transport::ResizeReplica {
         v1::replica::ResizeReplicaRequest {
             uuid: self.uuid.to_string(),
             requested_size: self.requested_size,
+        }
+    }
+}
+
+impl AgentToIoEngine for transport::SetReplicaOwner {
+    type IoEngineMessage = v1::replica::SetReplicaOwnerRequest;
+    fn to_rpc(&self) -> Self::IoEngineMessage {
+        Self::IoEngineMessage {
+            uuid: self.uuid.to_string(),
+            owner_id: self.owner_id.to_string(),
         }
     }
 }

@@ -15,6 +15,7 @@ use stor_port::{
 };
 
 use snafu::ResultExt;
+use stor_port::types::v0::transport::SetReplicaOwner;
 
 #[async_trait::async_trait]
 impl crate::controller::io_engine::ReplicaListApi for super::RpcClient {
@@ -154,6 +155,20 @@ impl crate::controller::io_engine::ReplicaApi for super::RpcClient {
             .into_inner()
             .uri;
         Ok(uri)
+    }
+
+    async fn set_replica_owner(&self, request: &SetReplicaOwner) -> Result<Replica, SvcError> {
+        let rpc_replica = self
+            .replica()
+            .set_replica_owner(request.to_rpc())
+            .await
+            .context(GrpcRequestError {
+                resource: ResourceKind::Replica,
+                request: "set_replica_owner",
+            })?;
+
+        let replica = rpc_replica_to_agent(&rpc_replica.into_inner(), &request.node_id)?;
+        Ok(replica)
     }
 }
 

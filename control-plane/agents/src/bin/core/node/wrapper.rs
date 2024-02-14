@@ -37,6 +37,7 @@ use stor_port::{
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use std::{future::Future, ops::DerefMut, sync::Arc};
+use stor_port::types::v0::transport::SetReplicaOwner;
 use tracing::{debug, trace, warn};
 
 type NodeResourceStates = (
@@ -1363,6 +1364,14 @@ impl ReplicaApi for Arc<tokio::sync::RwLock<NodeWrapper>> {
         let mut ctx = dataplane.reconnect(GETS_TIMEOUT).await?;
         self.update_replica_states(ctx.deref_mut()).await?;
         Ok(local_uri)
+    }
+
+    async fn set_replica_owner(&self, request: &SetReplicaOwner) -> Result<Replica, SvcError> {
+        let dataplane = self.grpc_client_locked(request.id()).await?;
+        let replica = dataplane.set_replica_owner(request).await?;
+        let mut ctx = dataplane.reconnect(GETS_TIMEOUT).await?;
+        self.update_replica_states(ctx.deref_mut()).await?;
+        Ok(replica)
     }
 }
 

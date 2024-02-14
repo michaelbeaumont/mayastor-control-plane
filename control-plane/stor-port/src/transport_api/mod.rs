@@ -184,6 +184,12 @@ impl From<HostNqnParseError> for ReplyError {
     }
 }
 
+impl From<uuid::Error> for ReplyError {
+    fn from(error: uuid::Error) -> Self {
+        Self::invalid_argument(ResourceKind::Unknown, "uuid", format!("{error:?}"))
+    }
+}
+
 impl From<tonic::Status> for ReplyError {
     fn from(status: tonic::Status) -> Self {
         Self::tonic_reply_error(status.code().into(), status.to_string(), String::new())

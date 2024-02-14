@@ -11,6 +11,7 @@ use stor_port::{
 };
 
 use snafu::ResultExt;
+use stor_port::types::v0::transport::SetReplicaOwner;
 
 #[async_trait::async_trait]
 impl crate::controller::io_engine::ReplicaListApi for super::RpcClient {
@@ -110,6 +111,14 @@ impl crate::controller::io_engine::ReplicaApi for super::RpcClient {
             .into_inner()
             .uri;
         Ok(uri)
+    }
+
+    async fn set_replica_owner(&self, _request: &SetReplicaOwner) -> Result<Replica, SvcError> {
+        Err(SvcError::GrpcRequestError {
+            resource: ResourceKind::Replica,
+            request: "set_replica_owner".to_string(),
+            source: tonic::Status::unimplemented("Not implemented for v0"),
+        })
     }
 }
 

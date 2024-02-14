@@ -18,7 +18,7 @@ use stor_port::types::v0::{
     },
     transport::{
         CreateReplica, DestroyReplica, NodeId, RemoveNexusChild, Replica, ReplicaOwners,
-        ResizeReplica, ShareReplica, SnapshotCloneSpecParams, UnshareReplica,
+        ResizeReplica, SetReplicaOwner, ShareReplica, SnapshotCloneSpecParams, UnshareReplica,
     },
 };
 
@@ -200,6 +200,8 @@ impl ResourceSharing for Option<&mut OperationGuardArc<ReplicaSpec>> {
 #[async_trait::async_trait]
 impl ResourceOwnerUpdate for OperationGuardArc<ReplicaSpec> {
     type Update = ReplicaOwners;
+    type Owner = SetReplicaOwner;
+    type SetOutput = Replica;
 
     async fn remove_owners(
         &mut self,
@@ -224,6 +226,24 @@ impl ResourceOwnerUpdate for OperationGuardArc<ReplicaSpec> {
             }
             Err(error) => Err(error),
         }
+    }
+
+    async fn set_owner(
+        &mut self,
+        registry: &Registry,
+        request: &Self::Owner,
+    ) -> Result<Self::SetOutput, SvcError> {
+        let node = registry.node_wrapper(&request.node_id).await?;
+        let repl = registry.replica(&request.uuid).await?;
+        let spec_clone = self
+            .start_update(
+                registry,
+                &repl,
+                ReplicaOperation::SetOwner(request.owner_id.clone()),
+            )
+            .await?;
+        let result = node.set_replica_owner(request).await;
+        self.complete_update(registry, result, spec_clone).await
     }
 }
 

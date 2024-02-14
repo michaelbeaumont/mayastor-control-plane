@@ -68,6 +68,7 @@ pub struct Replica {
     pub name: ReplicaName,
     /// UUID of the replica.
     pub uuid: ReplicaId,
+    pub owner_id: Option<VolumeId>,
     /// Id of the pool.
     pub pool_id: PoolId,
     /// UUID of the pool.
@@ -418,6 +419,7 @@ pub struct CreateReplica {
     pub name: Option<ReplicaName>,
     /// UUID of the replica.
     pub uuid: ReplicaId,
+    pub owner_id: Option<VolumeId>,
     /// Id of the pool.
     pub pool_id: PoolId,
     /// UUID of the pool.
@@ -596,6 +598,35 @@ impl DestroyReplica {
     pub fn with_disown_all(mut self) -> Self {
         self.disowners.disown_all = true;
         self
+    }
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
+pub struct SetReplicaOwner {
+    pub uuid: ReplicaId,
+    pub owner_id: VolumeId,
+    pub node_id: NodeId,
+}
+
+impl SetReplicaOwner {
+    pub fn new(uuid: ReplicaId, owner_id: VolumeId, node_id: NodeId) -> Self {
+        Self {
+            uuid,
+            owner_id,
+            node_id,
+        }
+    }
+
+    pub fn uuid(&self) -> &ReplicaId {
+        &self.uuid
+    }
+
+    pub fn owner_id(&self) -> &VolumeId {
+        &self.owner_id
+    }
+
+    pub fn node_id(&self) -> &NodeId {
+        &self.node_id
     }
 }
 

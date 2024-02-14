@@ -427,7 +427,7 @@ pub(super) async fn missing_nexus_recreate(
         for item in children.candidates() {
             // just in case the replica gets somehow shared/unshared?
             match nexus_guard
-                .make_me_replica_accessible(context.registry(), item.state())
+                .make_me_replica_accessible(context.registry(), item.state(), nexus.owner.clone())
                 .await
             {
                 Ok(uri) => {

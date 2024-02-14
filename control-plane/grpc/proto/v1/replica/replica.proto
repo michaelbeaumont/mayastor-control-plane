@@ -13,6 +13,7 @@ message Replica {
   string name = 2;
   // uuid of the replica
   google.protobuf.StringValue replica_id = 3;
+  optional string owner_id = 13;
   // id of the pool
   string pool_id = 4;
   // thin provisioning
@@ -82,6 +83,7 @@ message CreateReplicaRequest {
   optional string name = 2;
   // uuid of the replica
   google.protobuf.StringValue replica_id = 3;
+  optional string owner_id = 15; // owner of the replica, if any
   // id of the pool
   string pool_id = 4;
   // thin provisioning
@@ -214,6 +216,7 @@ message ReplicaSpec {
   // uuid of the replica
   google.protobuf.StringValue replica_id = 2;
   // size of the replica in bytes
+  optional string owner_id = 13;
   uint64 size = 3;
   // id of the pool
   string pool_id = 4;

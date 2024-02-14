@@ -151,6 +151,7 @@ impl SpecOperationsHelper for ReplicaSpec {
             ReplicaOperation::OwnerUpdate(_) => Ok(()),
             // TODO: Shall we do something here with input size?
             ReplicaOperation::Resize(_) => Ok(()),
+            ReplicaOperation::SetOwner(_) => Ok(()),
             _ => unreachable!(),
         }?;
         self.start_op(op);

@@ -91,6 +91,7 @@ pub enum MessageIdVs {
     ShareReplica,
     /// Unshare Replica.
     UnshareReplica,
+    SetReplicaOwner,
     /// Create replica snapshot.
     CreateReplicaSnapshot,
     /// Delete Replica Snapshot.

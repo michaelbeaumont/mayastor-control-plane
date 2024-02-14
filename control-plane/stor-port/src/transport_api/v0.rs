@@ -43,6 +43,7 @@ impl_message!(DestroyReplica);
 impl_message!(ResizeReplica);
 impl_message!(ShareReplica);
 impl_message!(UnshareReplica);
+impl_message!(SetReplicaOwner);
 impl_message!(CreateReplicaSnapshot);
 impl_message!(DestroyReplicaSnapshot);
 impl_message!(ListReplicaSnapshots);

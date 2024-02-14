@@ -64,6 +64,7 @@ impl From<Replica> for replica::Replica {
             node_id: replica.node.into(),
             name: replica.name.into(),
             replica_id: Some(replica.uuid.into()),
+            owner_id: replica.owner_id.into_opt(),
             pool_id: replica.pool_id.into(),
             pool_uuid: replica.pool_uuid.into_opt(),
             thin: replica.thin,
@@ -116,6 +117,13 @@ impl TryFrom<replica::Replica> for Replica {
             node: replica.node_id.into(),
             name: replica.name.into(),
             uuid: ReplicaId::try_from(StringValue(replica.replica_id))?,
+            owner_id: match replica.owner_id {
+                Some(id) => {
+                    let vol_id = VolumeId::try_from(id)?;
+                    Some(vol_id)
+                }
+                None => None,
+            },
             pool_id: replica.pool_id.into(),
             pool_uuid: match replica.pool_uuid {
                 Some(uuid) => Some(match PoolUuid::try_from(uuid) {
@@ -287,6 +295,8 @@ pub trait CreateReplicaInfo: Send + Sync + std::fmt::Debug {
     fn name(&self) -> Option<ReplicaName>;
     /// Uuid of the replica
     fn uuid(&self) -> ReplicaId;
+    /// Id of the volume
+    fn owner_id(&self) -> Option<VolumeId>;
     /// Id of the pool
     fn pool_id(&self) -> PoolId;
     /// Uuid of the pool
@@ -316,6 +326,10 @@ impl CreateReplicaInfo for CreateReplica {
 
     fn uuid(&self) -> ReplicaId {
         self.uuid.clone()
+    }
+
+    fn owner_id(&self) -> Option<VolumeId> {
+        self.owner_id.clone()
     }
 
     fn pool_id(&self) -> PoolId {
@@ -373,6 +387,16 @@ impl CreateReplicaInfo for ValidatedCreateReplicaRequest {
 
     fn uuid(&self) -> ReplicaId {
         self.uuid.clone()
+    }
+
+    fn owner_id(&self) -> Option<VolumeId> {
+        match self.inner.owner_id.clone() {
+            Some(id) => {
+                let vol_id = VolumeId::try_from(id).ok()?;
+                Some(vol_id)
+            }
+            None => None,
+        }
     }
 
     fn pool_id(&self) -> PoolId {
@@ -788,6 +812,7 @@ impl From<&dyn CreateReplicaInfo> for CreateReplicaRequest {
         Self {
             node_id: data.node().to_string(),
             pool_id: data.pool_id().to_string(),
+            owner_id: data.owner_id().map(|id| id.to_string()),
             pool_uuid: data.pool_uuid().map(|uuid| uuid.into()),
             name: data.name().map(|name| name.to_string()),
             replica_id: Some(data.uuid().to_string()),
@@ -807,6 +832,7 @@ impl From<&dyn CreateReplicaInfo> for CreateReplica {
             node: data.node(),
             name: data.name(),
             uuid: data.uuid(),
+            owner_id: data.owner_id(),
             pool_id: data.pool_id(),
             pool_uuid: data.pool_uuid(),
             size: data.size(),
@@ -1037,6 +1063,13 @@ impl TryFrom<replica::ReplicaSpec> for ReplicaSpec {
         Ok(Self {
             name: ReplicaName::from_string(value.name),
             uuid: ReplicaId::try_from(StringValue(value.replica_id))?,
+            owner_id: match value.owner_id {
+                Some(id) => {
+                    let vol_id = VolumeId::try_from(id)?;
+                    Some(vol_id)
+                }
+                None => None,
+            },
             size: value.size,
             pool: match value.pool_uuid {
                 Some(uuid) => PoolRef::Uuid(
@@ -1097,6 +1130,7 @@ impl From<ReplicaSpec> for replica::ReplicaSpec {
         Self {
             name: value.name.to_string(),
             replica_id: Some(value.uuid.to_string()),
+            owner_id: value.owner_id.map(|id| id.to_string()),
             size: value.size,
             pool_id: match value.pool.clone() {
                 PoolRef::Named(id) => id.into(),

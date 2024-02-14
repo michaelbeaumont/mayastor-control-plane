@@ -18,7 +18,7 @@ use stor_port::types::v0::{
     },
     transport::{
         AddNexusReplica, Child, ChildUri, Nexus, NodeId, RemoveNexusChild, RemoveNexusReplica,
-        Replica, ReplicaOwners, ShareReplica,
+        Replica, ReplicaOwners, SetReplicaOwner, ShareReplica, VolumeId,
     },
 };
 
@@ -34,7 +34,9 @@ impl OperationGuardArc<NexusSpec> {
         // First check that we are able to start a rebuild.
         registry.rebuild_allowed().await?;
 
-        let uri = self.make_me_replica_accessible(registry, replica).await?;
+        let uri = self
+            .make_me_replica_accessible(registry, replica, self.as_ref().owner.clone())
+            .await?;
         let request = AddNexusReplica {
             node: self.as_ref().node.clone(),
             nexus: self.as_ref().uuid.clone(),
@@ -121,8 +123,9 @@ impl OperationGuardArc<NexusSpec> {
         &self,
         registry: &Registry,
         replica_state: &Replica,
+        volume_id: Option<VolumeId>,
     ) -> Result<ChildUri, SvcError> {
-        Self::make_replica_accessible(registry, replica_state, &self.as_ref().node).await
+        Self::make_replica_accessible(registry, replica_state, &self.as_ref().node, volume_id).await
     }
 
     /// Make the replica accessible on the specified `NodeId`.
@@ -132,7 +135,19 @@ impl OperationGuardArc<NexusSpec> {
         registry: &Registry,
         replica_state: &Replica,
         nexus_node: &NodeId,
+        volume_id: Option<VolumeId>,
     ) -> Result<ChildUri, SvcError> {
+        if replica_state.owner_id.is_none() {
+            if let Some(vol) = volume_id {
+                let mut replica = registry.specs().replica(&replica_state.uuid).await?;
+                let set_owner = SetReplicaOwner::new(
+                    replica_state.uuid.clone(),
+                    vol,
+                    replica_state.node.clone(),
+                );
+                let _ = replica.set_owner(registry, &set_owner).await;
+            }
+        }
         if nexus_node == &replica_state.node {
             // on the same node, so connect via the loopback bdev
             let mut replica = registry.specs().replica(&replica_state.uuid).await?;

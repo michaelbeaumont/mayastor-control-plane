@@ -208,6 +208,8 @@ pub(crate) trait ResourceOffspring {
 pub(crate) trait ResourceOwnerUpdate {
     /// The updated resource owners.
     type Update: Sync + Send;
+    type Owner: Sync + Send;
+    type SetOutput: Sync + Send + Sized;
 
     /// Update the owners list.
     async fn remove_owners(
@@ -217,6 +219,12 @@ pub(crate) trait ResourceOwnerUpdate {
         // pre-update the actual spec anyway since this is a removal,
         update_on_commit: bool,
     ) -> Result<(), SvcError>;
+
+    async fn set_owner(
+        &mut self,
+        registry: &Registry,
+        request: &Self::Owner,
+    ) -> Result<Self::SetOutput, SvcError>;
 }
 
 /// Resource shutdown related operations.
