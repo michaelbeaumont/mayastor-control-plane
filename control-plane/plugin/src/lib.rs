@@ -3,7 +3,7 @@ extern crate prettytable;
 #[macro_use]
 extern crate lazy_static;
 
-use operations::Label;
+use operations::{Label, SetProperty};
 use resources::LabelResources;
 
 use crate::{
@@ -13,7 +13,8 @@ use crate::{
     },
     resources::{
         blockdevice, cordon, drain, node, pool, snapshot, volume, CordonResources, DrainResources,
-        GetCordonArgs, GetDrainArgs, GetResources, ScaleResources, UnCordonResources,
+        GetCordonArgs, GetDrainArgs, GetResources, ScaleResources, SetPropertyResources,
+        UnCordonResources,
     },
 };
 
@@ -85,6 +86,7 @@ impl ExecuteOperation for Operations {
             Operations::Drain(resource) => resource.execute(cli_args).await,
             Operations::Get(resource) => resource.execute(cli_args).await,
             Operations::Scale(resource) => resource.execute(cli_args).await,
+            Operations::Set(resource) => resource.execute(cli_args).await,
             Operations::Cordon(resource) => resource.execute(cli_args).await,
             Operations::Uncordon(resource) => resource.execute(cli_args).await,
             Operations::Label(resource) => resource.execute(cli_args).await,
@@ -174,6 +176,19 @@ impl ExecuteOperation for ScaleResources {
         match self {
             ScaleResources::Volume { id, replica_count } => {
                 volume::Volume::scale(id, *replica_count, &cli_args.output).await
+            }
+        }
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl ExecuteOperation for SetPropertyResources {
+    type Args = CliArgs;
+    type Error = crate::resources::Error;
+    async fn execute(&self, cli_args: &CliArgs) -> PluginResult {
+        match self {
+            SetPropertyResources::Volume { id, properties } => {
+                volume::Volume::set_property(id, properties, &cli_args.output).await
             }
         }
     }

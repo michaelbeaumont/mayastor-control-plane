@@ -1,14 +1,16 @@
 use crate::{
-    operations::{Get, ListExt, PluginResult, RebuildHistory, ReplicaTopology, Scale},
+    operations::{Get, ListExt, PluginResult, RebuildHistory, ReplicaTopology, Scale, SetProperty},
     resources::{
         error::Error,
-        utils,
-        utils::{optional_cell, CreateRow, CreateRows, GetHeaderRow, OutputFormat},
-        VolumeId,
+        utils::{self, optional_cell, CreateRow, CreateRows, GetHeaderRow, OutputFormat},
+        SetVolumeProperties, VolumeId,
     },
     rest_wrapper::RestClient,
 };
-use openapi::{models::VolumeContentSource, tower::client::Url};
+use openapi::{
+    models::{SetVolumePropertyBody, VolumeContentSource},
+    tower::client::Url,
+};
 
 use async_trait::async_trait;
 use chrono::prelude::*;
@@ -222,6 +224,45 @@ impl Scale for Volume {
             }
         }
         Ok(())
+    }
+}
+
+#[async_trait(?Send)]
+impl SetProperty for Volume {
+    type ID = VolumeId;
+    type Property = SetVolumeProperties;
+    async fn set_property(
+        id: &Self::ID,
+        property: &Self::Property,
+        output: &utils::OutputFormat,
+    ) -> PluginResult {
+        match property {
+            SetVolumeProperties::MaxSnapshots { max_snapshots } => {
+                let property_body = SetVolumePropertyBody::max_snapshots(*max_snapshots);
+                match RestClient::client()
+                    .volumes_api()
+                    .put_volume_property(id, property_body.clone())
+                    .await
+                {
+                    Ok(volume) => match output {
+                        OutputFormat::Yaml | OutputFormat::Json => {
+                            // Print json or yaml based on output format.
+                            utils::print_table(output, volume.into_body());
+                            Ok(())
+                        }
+                        OutputFormat::None => {
+                            // In case the output format is not specified, show a success message.
+                            println!("Volume {id} property {:?} set successfully", property_body);
+                            Ok(())
+                        }
+                    },
+                    Err(e) => Err(Error::SetVolumePropertyError {
+                        id: id.to_string(),
+                        source: e,
+                    }),
+                }
+            }
+        }
     }
 }
 
